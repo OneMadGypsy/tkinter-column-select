@@ -3,7 +3,11 @@
 Column-(select, cut, copy, paste, drag, and drop) for tk.Text
 
 **hotkeys**
-* Box-select: shift+alt+LMB+drag
-* Box-cut   : cntl+x
-* Box-copy  : cntl+c
-* Box-paste : cntl+v
+
+| feature     | hotkeys                                                         |
+|-------------|-----------------------------------------------------------------|
+| box-select  | place cursor at desired selection start then Shift+Alt+LMB+drag |
+| box-cut     | Cntl+x                                                          |
+| box-copy    | Cntl+c                                                          |
+| box-paste   | Cntl+v                                                          |
+| box-dragdrop| LMB over selection + drag / release mouse to drop               |
