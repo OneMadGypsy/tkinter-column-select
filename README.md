@@ -1,6 +1,6 @@
 # tkinter-column-select
 
-Column-(select, cut, copy, paste, drag, and drop) for tk.Text
+box-(select, cut, copy, paste) and sel-(drag, drop) for tk.Text
 
 **hotkeys**
 
