@@ -10,4 +10,4 @@ Column-(select, cut, copy, paste, drag, and drop) for tk.Text
 | box-cut     | Cntl+x                                                          |
 | box-copy    | Cntl+c                                                          |
 | box-paste   | Cntl+v                                                          |
-| box-dragdrop| LMB over selection + drag / release mouse to drop               |
+| drag-drop   | LMB over selection + drag / release mouse to drop               |
