@@ -12,14 +12,14 @@ CONTROL = 0x000004
 BUTTON1 = 0x000100
 ALT     = 0x020000
 
-#MARKS
 #drop insertion point
-INSPNT  = 'insertpoint'
+INSPNT = 'insertpoint'
+
+#inline whitespace regex
+ILWHITE = re.compile(r'[ \t]+')
 
 # begin col/row, end col/row, (width or len), height
 SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h')
-
-ILWHITE = re.compile(r'[ \t]+')
 
 #default tk.Text **kwargs for this script
 @dataclass 
@@ -84,8 +84,8 @@ class EditorText(tk.Text):
         #what is the top visible row number
         r,_ = map(int, self.index('@0,0').split('.'))
         #figure out where we are from there
-        r = math.ceil (y/self.__fh-1) + r
-        c = math.floor(x/self.__fw)
+        r = round(y/self.__fh) + r
+        c = round(x/self.__fw)
         #final index ~ MUST NOT be converted to `.index()` as it probably doesn't exist yet
         #that's the whole point ~ this is returning where we would be IF every possible index was valid
         return f'{r}.{c}'
@@ -152,20 +152,21 @@ class EditorText(tk.Text):
         self.mark_gravity(INSPNT, tk.LEFT)
         
         #add listeners
-        for evt in ('KeyPress','KeyRelease','ButtonPress-1','ButtonRelease-1','<Paste>'): 
+        for evt in ('KeyPress','KeyRelease','ButtonPress-1','ButtonRelease-1','Motion','<Paste>'): 
             self.bind(f'<{evt}>', self.__handler)
         
         #features
         self.__boxselect   = False  #select text within a rect
         self.__boxcopy     = False  #cut/copy/paste with column behavior
-        self.__seldrag     = False  #drag any selected data to a new location
+        self.__selgrab     = False  #grab any selected data
+        self.__seldrag     = False  #drag any selected data
         #vars
         self.__hotbox      = False  #shift and alt are pressed
         self.__mouseinit   = False  #locks in box-select begin col and begin row bounds
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
         self.__hgrabofs    = None   #horizontal offset from 'current' to sel.start
-        self.__linsert     = None   #last known 'insert' position ~ only used while self.__hotbox is True
+        self.__linsert     = None   #last known 'insert' position ~ used while __hotbox or __selgrab is True
         self.__lbounds     = None   #last bounds that were applied
         self.__lclipbd     = ''     #back-up of last clipboard data
         
@@ -179,7 +180,7 @@ class EditorText(tk.Text):
     def __proxy(self, cmd, *args) -> Any:
         #suppress ALL tags except BOXSELECT from the moment the mouse is pressed
         #for hotkeys and dragging
-        if (self.__hotbox or self.__seldrag) and (cmd=='tag') and args:
+        if (self.__hotbox or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
                 if args[1]!='BOXSELECT':
                     return
@@ -199,6 +200,8 @@ class EditorText(tk.Text):
         self.__mouseinit = False 
         #replace BOXSELECT tags with tk.SEL
         self.tag_replace('BOXSELECT', tk.SEL)
+        
+        self.focus_set()
     
     #reset    
     def __boxreset(self) -> None:
@@ -214,28 +217,32 @@ class EditorText(tk.Text):
         if bnd:=(bnd or self.__lbounds):
             #store current caret position
             p = self.caret
-            for n in range(bnd.br, bnd.er+1):
-                b, e = f'{n}.0', f'{n}.end'
+            for nr in range(bnd.br, bnd.er+1):
+                b, e = f'{nr}.0', f'{nr}.end'
                 #get entire line
                 t  = self.get(b, e)
-                #if the entire line is just space, get rid of it
+                #if the entire line is just space, get rid of the space
+                #if box-select created it, we get rid of the whole row after we finish with space removal
                 if not len(ILWHITE.sub('', t)):
                     self.replace_text(b, e, '')
                 else:
                     #strip only to the right of the column
                     t = t[bnd.ec:].rstrip()
                     #replace the right side with the rstripped right side text
-                    self.replace_text(f'{n}.{bnd.ec}', e, t)
+                    self.replace_text(f'{nr}.{bnd.ec}', e, t)
+                #put the caret back where it was
+                self.caret = p  
                 
-            #delete all new lines   
+            #the end of the entire text is the only place where box-select will create new lines
+            #last row of entire text  
             r,_ = map(int, self.index('end-1c').split('.'))
-            if n == r:
-                while not (l:=len(self.get(f'{n}.0', 'end-1c'))):
-                    self.delete(f'{n-1}.end', 'end-1c')
-                    n-=1
-                    
-            #put the caret back where it was
-            self.caret = p    
+            #if we are on the last row
+            if nr == r:
+                #delete the last row until either it isn't blank or `nr` is exhausted
+                while not (l:=len(self.get(f'{nr}.0', 'end-1c'))) and nr>=bnd.br:
+                    self.delete(f'{nr-1}.end', 'end-1c')
+                    nr-=1
+                    self.caret = p 
             #so things don't get froggy
             self.focus_set()
      
@@ -454,6 +461,8 @@ class EditorText(tk.Text):
                 return 'break'
             
         elif event.type == tk.EventType.ButtonPress:
+            #wake up
+            self.focus_set()
             #get mouse index
             m  = self.index('current') 
             
@@ -468,9 +477,9 @@ class EditorText(tk.Text):
                 #flip tk.SEL to BOXSELECT
                 self.tag_replace(tk.SEL, 'BOXSELECT')
                 #turn off all tag add/remove except BOXSELECT in .__proxy
-                self.__seldrag = True
-                #4-way arrows
-                self['cursor'] = 'fleur'
+                self.__selgrab = True
+                #store the drag start position
+                self.__linsert = self.caret
                 
                 if b:=self.__lbounds:
                     #get mouse index row
@@ -480,32 +489,55 @@ class EditorText(tk.Text):
                     
             #if a selection is not under the mouse, reset
             elif self.__boxselect: self.__boxreset()
-                
+        
+        elif event.type == tk.EventType.Motion:
+            #have we moved enough to consider it dragging?
+            if (not self.__seldrag) and self.__selgrab:
+                #if we moved enough
+                if self.caret != self.__linsert: 
+                    #4-way arrows
+                    self['cursor'] = 'fleur'
+                    #turn on dragging state
+                    self.__seldrag = True
+                    
         elif event.type == tk.EventType.ButtonRelease:
-            #DROP SELECTED
-            if self.__seldrag:
+            #wake up
+            self.focus_set()
+            
+            #GRABBED
+            if self.__selgrab:
+                #turn on all tag add/remove in __proxy
+                self.__selgrab = False
+                
+                #nothing to drop ~ abort
+                if not self.__seldrag:
+                    #remove selection, reset, abort
+                    self.tag_move('BOXSELECT')
+                    self.__boxreset()
+                    return
+                    
+                #reset state
+                self.__seldrag = False
                 #regular cursor
                 self['cursor'] = 'xterm'
-                
-                #COPY
-                #turn on all tag add/remove in __proxy
-                self.__seldrag = False
                 #flip BOXSELECT back to tk.SEL
                 self.tag_replace('BOXSELECT', tk.SEL)
-                #copy
-                self.__copy()
-                #multiline-caret
-                mc = None
                 
-                #since the bounds represent the selected text and the text will be deleted...
-                #we need to pass a "multiline caret" to boxclean
+                #make a "multiline caret" to represent every row the deleted text was on, but with no width
+                #this is so __boxclean works down every row in the caret column instead of regarding bounds that no longer exist
+                #we have to get this data before we actually delete
+                mc = None
                 if self.__boxselect:
                     #get selection bounds
                     mc = self.__bounds(*self.tag_bounds(tk.SEL), ow=False)
                     #turn it into a "multiline caret"
                     mc = self.__bounds(f'{mc.br}.{mc.bc}', f'{mc.er}.{mc.bc}', ow=False)
                 
-                #cut and paste
+                #DROP SELECTED
+                #copy
+                self.__copy()
+                
+                #cut and paste in a new location
                 if bnd:=self.__boxmove(): # move bounds to current location
                     #CUT
                     #this tracks any effect a deletion has on where we are trying to drop this
@@ -525,8 +557,9 @@ class EditorText(tk.Text):
                         self.tag_move(tk.SEL, ip, self.caret)
                         return 
                     
-                    #
+                    #remove box-select-generated whitespace from __cut position
                     self.__boxclean(mc)
+                    
                     #PASTE COLUMN 
                     self.__paste()
                     #restore clipboard
@@ -557,5 +590,4 @@ if __name__ == '__main__':
             ed.insert(tk.END, f'aaa | bbb | ccc | ddd | eee | fff | ggg | hhh ||\n'*ROWS)
     #run        
     App().mainloop()
-    
-    
+
