@@ -1,8 +1,10 @@
+#OneMadGypsy - box-selection features for tk.Text
+
 import tkinter as tk, tkinter.font as tkf
 from collections import namedtuple
 from typing      import Iterable, Any
 from dataclasses import dataclass, asdict
-import math
+import math, re
 
 # event.state flags
 SHIFT   = 0x000001
@@ -17,6 +19,7 @@ INSPNT  = 'insertpoint'
 # begin col/row, end col/row, (width or len), height
 SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h')
 
+ILWHITE = re.compile(r'[ \t]+')
 
 #default tk.Text **kwargs for this script
 @dataclass 
@@ -207,17 +210,32 @@ class EditorText(tk.Text):
         self.__lbounds   = None
         
     #remove any whitespace that box-select created  
-    def __boxclean(self) -> None:
-        if b:=self.__lbounds:
+    def __boxclean(self, bnd:SelectBounds=None) -> None:
+        if bnd:=(bnd or self.__lbounds):
             #store current caret position
             p = self.caret
-            for n in range(b.br, b.er+1): 
-                #right strip this line
-                text = self.get(f'{n}.{b.ec}', f'{n}.end').rstrip()
-                #replace this line with the stripped text
-                self.replace_text(f'{n}.{b.ec}', f'{n}.end', text)
-                #put the caret back where it was
-                self.caret = p
+            for n in range(bnd.br, bnd.er+1):
+                b, e = f'{n}.0', f'{n}.end'
+                #get entire line
+                t  = self.get(b, e)
+                #if the entire line is just space, get rid of it
+                if not len(ILWHITE.sub('', t)):
+                    self.replace_text(b, e, '')
+                else:
+                    #strip only to the right of the column
+                    t = t[bnd.ec:].rstrip()
+                    #replace the right side with the rstripped right side text
+                    self.replace_text(f'{n}.{bnd.ec}', e, t)
+                
+            #delete all new lines   
+            r,_ = map(int, self.index('end-1c').split('.'))
+            if n == r:
+                while not (l:=len(self.get(f'{n}.0', 'end-1c'))):
+                    self.delete(f'{n-1}.end', 'end-1c')
+                    n-=1
+                    
+            #put the caret back where it was
+            self.caret = p    
             #so things don't get froggy
             self.focus_set()
      
@@ -476,6 +494,16 @@ class EditorText(tk.Text):
                 self.tag_replace('BOXSELECT', tk.SEL)
                 #copy
                 self.__copy()
+                #multiline-caret
+                mc = None
+                
+                #since the bounds represent the selected text and the text will be deleted...
+                #we need to pass a "multiline caret" to boxclean
+                if self.__boxselect:
+                    #get selection bounds
+                    mc = self.__bounds(*self.tag_bounds(tk.SEL), ow=False)
+                    #turn it into a "multiline caret"
+                    mc = self.__bounds(f'{mc.br}.{mc.bc}', f'{mc.er}.{mc.bc}', ow=False)
                 
                 #cut and paste
                 if bnd:=self.__boxmove(): # move bounds to current location
@@ -497,6 +525,8 @@ class EditorText(tk.Text):
                         self.tag_move(tk.SEL, ip, self.caret)
                         return 
                     
+                    #
+                    self.__boxclean(mc)
                     #PASTE COLUMN 
                     self.__paste()
                     #restore clipboard
@@ -512,8 +542,9 @@ class EditorText(tk.Text):
                     self.tag_move(tk.SEL, b, e)
                             
   
-#example
-if __name__ == '__main__':  
+#example  
+ROWS = 4
+if __name__ == '__main__':
     class App(tk.Tk):
         def __init__(self, *args, **kwargs):
             tk.Tk.__init__(self, *args, **kwargs)
@@ -523,7 +554,7 @@ if __name__ == '__main__':
             #instantiate editor
             (ed := EditorText(self)).grid(sticky='nswe')
             #create a playground to test column select features ~ last column is empty on purpose
-            ed.insert(tk.END, f'aaa | bbb | ccc | ddd | eee | fff | ggg | hhh ||\n'*60)
+            ed.insert(tk.END, f'aaa | bbb | ccc | ddd | eee | fff | ggg | hhh ||\n'*ROWS)
     #run        
     App().mainloop()
     
