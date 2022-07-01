@@ -12,4 +12,6 @@ box-(select, cut, copy, paste, type) and sel-(drag, drop) for tk.Text
 | box-paste   | Cntl+v                                                          |
 | drag-drop   | LMB over selection + drag / release mouse to drop               |
 
-For the typing feature make a box-selection (with or without width) and start typing. A box selection that has no width will produce a multiline caret.
+
+For the typing feature make a box-selection (with or without width) and start typing. 
+A box selection that has no width will produce a multiline caret.
