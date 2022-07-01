@@ -1,5 +1,3 @@
-#OneMadGypsy - box-selection features for tk.Text
-
 import tkinter as tk, tkinter.font as tkf
 from collections import namedtuple
 from typing      import Iterable, Any
@@ -52,7 +50,6 @@ class EditorText(tk.Text):
     @caret.setter
     def caret(self, index:str) -> None:
         self.mark_set('insert', index)
-        #self.focus_set()
      
     #GEOMETRY
     #absolutely do NOT convert anything within this method to an `.index(...)`
@@ -116,7 +113,7 @@ class EditorText(tk.Text):
          
     #this is the "draw a caret only" version of __bounds_range
     #adv puts the caret at the next character
-    def __typing_range(self, adv:bool=True):
+    def __typing_range(self, adv:int):
         #hide real caret
         self['insertwidth'] = 0
         #stop blinking
@@ -124,13 +121,13 @@ class EditorText(tk.Text):
         #delete faux-carets
         for n in self.image_names(): self.delete(n)
         #destroy anything that is selected
-        self.__cut()
+        if self.__cut() and adv<0: adv = 0
         
         if b:=self.__lbounds:
             #type at multicaret
             for n in range(b.br, b.er+1): 
                 #yield row, begin column
-                yield n, b.bc
+                yield n, b.bc, b.ec, adv
                 #create caret
                 self.__fauxcaret(f'{n}.{b.bc+adv}')
               
@@ -414,6 +411,7 @@ class EditorText(tk.Text):
             self.tag_remove(tk.SEL, *r[i:i+2])  #remove tk.SEL tag
             self.replace_text(*r[i:i+2], '')    #delete selected text
         self.caret = p or self.caret            #put the caret somewhere
+        return len(r)
         
     #move all selected text to clipboard
     #this is safe for regular selected text but designed for box-selected text
@@ -502,8 +500,9 @@ class EditorText(tk.Text):
             elif event.keysym=='BackSpace':
                 #BOXSELECT BackSpace
                 if self.__boxselect:
-                    #essentially, we are typing nothing
-                    for _,_ in self.__typing_range(False): pass
+                    #negative typing
+                    for r,bc,ec,adv in self.__typing_range(-1):
+                        if adv: self.replace_text(f'{r}.{bc-1}', f'{r}.{ec}', '')
                     return 'break'    
                 return
                     
@@ -571,7 +570,7 @@ class EditorText(tk.Text):
                 #BOX-TYPING
                 if self.__boxselect and len(event.char):
                     #typing_range handles the faux-caret and bounds, we just need to insert
-                    for r,c in self.__typing_range(): self.insert(f'{r}.{c}', event.char)  
+                    for r,c,_,_ in self.__typing_range(1): self.insert(f'{r}.{c}', event.char)  
                     return 'break'
                             
         elif event.type == tk.EventType.KeyRelease:
@@ -701,5 +700,3 @@ if __name__ == '__main__':
             ed.insert(tk.END, f'aaa | bbb | ccc | ddd | eee | fff | ggg | hhh ||\n'*ROWS)
     #run        
     App().mainloop()
-    
-    
