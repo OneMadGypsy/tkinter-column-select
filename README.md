@@ -1,6 +1,6 @@
 # tkinter-column-select
 
-box-(select, cut, copy, paste) and sel-(drag, drop) for tk.Text
+box-(select, cut, copy, paste, type) and sel-(drag, drop) for tk.Text
 
 **hotkeys**
 
@@ -11,3 +11,5 @@ box-(select, cut, copy, paste) and sel-(drag, drop) for tk.Text
 | box-copy    | Cntl+c                                                          |
 | box-paste   | Cntl+v                                                          |
 | drag-drop   | LMB over selection + drag / release mouse to drop               |
+
+For the typing feature make a box-selection (with or without width) and start typing. A box selection that has no width will produce a multiline caret.
