@@ -4,13 +4,16 @@ import tkinter as tk, tkinter.font as tkf
 from collections import namedtuple
 from typing      import Iterable, Any
 from dataclasses import dataclass, asdict
-import math, re
+import math, re, tempfile, os
 
 # event.state flags
 SHIFT   = 0x000001
 CONTROL = 0x000004 
 BUTTON1 = 0x000100
 ALT     = 0x020000
+
+#caret width
+INSWIDTH = 1
 
 #drop insertion point
 INSPNT = 'insertpoint'
@@ -19,7 +22,7 @@ INSPNT = 'insertpoint'
 ILWHITE = re.compile(r'[ \t]+')
 
 # begin col/row, end col/row, (width or len), height
-SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h')
+SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h rv')
 
 #default tk.Text **kwargs for this script
 @dataclass 
@@ -27,6 +30,10 @@ class Text_t:
     font            :str  = '{Courier New} 14'
     selectforeground:str  = '#222222'
     selectbackground:str  = '#DDDDDD'
+    insertwidth     :int  = INSWIDTH
+    insertofftime   :int  = 300
+    insertontime    :int  = 600
+    insertbackground:str  = '#555555'
     wrap            :str  = "none"
     exportselection :int  = 1
     takefocus       :int  = 1
@@ -45,12 +52,12 @@ class EditorText(tk.Text):
     @caret.setter
     def caret(self, index:str) -> None:
         self.mark_set('insert', index)
-        self.focus_set()
+        #self.focus_set()
      
     #GEOMETRY
     #absolutely do NOT convert anything within this method to an `.index(...)`
     #some of the descriptions below may not exist yet
-    def __bounds(self, b:str=None, e:str=None, ow:bool=False) -> SelectBounds:
+    def __bounds(self, b:str=None, e:str=None, ow:bool=False, rv:bool=None) -> SelectBounds:
         b, e = b or self.__boxstart, e or self.__boxend
         #parse row/col positions
         b_ = map(int, b.split('.')) 
@@ -73,19 +80,76 @@ class EditorText(tk.Text):
         if ow:
             self.__boxstart = f'{br}.{bc}'
             self.__boxend   = f'{er}.{ec}'
+            
+        rv = rv if not (rv is None) else self.compare(self.__boxstart, '>', self.__boxend)
         
         #technically, `h` is always 1 less than the actual height
         #it's ok because everything starts by considering the first line
         #i.e. first_selected_line_number + `h` = the right number
-        return SelectBounds(bc, br, ec, er, w, h) 
-     
+        return SelectBounds(bc, br, ec, er, w, h, rv) 
+    
+    #this method could easily be renamed __drawrect
+    #it tags __lbounds ranges and puts a multiline caret on whichever side makes sense
+    def __bounds_range(self, tag, bo:int=0, eo:int=0, ao:bool=False):
+        #hide real caret
+        self['insertwidth'] = 0
+                    
+        if bnd:=self.__lbounds:
+            b  , e   = [], []
+            abo, aeo = int(bo*ao),int(eo*ao)
+            for n in range(bnd.br, bnd.er+1):
+                ch = (f'{n}.{bnd.ec+aeo}',f'{n}.{bnd.bc+abo}')
+                #store beginning and end indexes
+                b.append(f'{n}.{bnd.bc+bo}') #rv
+                e.append(f'{n}.{bnd.ec+eo}') #1
+                #yield row, begin column, end column
+                yield n, bnd.bc+abo, bnd.ec+aeo
+                #create caret
+                self.__fauxcaret(ch[bnd.rv])
+                
+            #update real caret position
+            self.caret = ch[bnd.rv]
+            #config main faux-caret
+            self.__fauxcaret(self.caret, main=True, cfg=True)
+            #clear and draw tag
+            self.tag_move(tag, b, e)
+         
+    #this is the "draw a caret only" version of __bounds_range
+    #adv puts the caret at the next character
+    def __typing_range(self, adv:bool=True):
+        #hide real caret
+        self['insertwidth'] = 0
+        #stop blinking
+        self.__blinkreset()
+        #delete faux-carets
+        for n in self.image_names(): self.delete(n)
+        #destroy anything that is selected
+        self.__cut()
+        
+        if b:=self.__lbounds:
+            #type at multicaret
+            for n in range(b.br, b.er+1): 
+                #yield row, begin column
+                yield n, b.bc
+                #create caret
+                self.__fauxcaret(f'{n}.{b.bc+adv}')
+              
+            #update bounds              
+            self.__lbounds = self.__bounds(f'{b.br}.{b.bc+adv}', f'{b.er}.{b.bc+adv}', ow=True, rv=b.rv)
+            #update real caret position
+            self.caret = (self.__boxstart,self.__boxend)[b.rv]
+            #config main faux-caret
+            self.__fauxcaret(self.caret, main=True, cfg=True)
+            #start blinking
+            self.__blink()
+              
     #virtual index
     def vindex(self, x:int, y:int) -> str:
         #what is the top visible row number
         r,_ = map(int, self.index('@0,0').split('.'))
         #figure out where we are from there
         r = round(y/self.__fh) + r
-        c = round(x/self.__fw)
+        c = math.ceil(x/self.__fw)
         #final index ~ MUST NOT be converted to `.index()` as it probably doesn't exist yet
         #that's the whole point ~ this is returning where we would be IF every possible index was valid
         return f'{r}.{c}'
@@ -109,8 +173,6 @@ class EditorText(tk.Text):
         for i in range(0, len(r), 2):
             self.tag_remove(tag_in , *r[i:i+2])
             self.tag_add   (tag_out, *r[i:i+2])
-        #ensure the widget's full attention ~ it can get froggy
-        self.focus_set()
            
     #remove all instances of a tag, and reassign it by `b` and `e` accordingly
     def tag_move(self, tag:str, b:Iterable=None, e:Iterable=None) -> None:
@@ -135,8 +197,9 @@ class EditorText(tk.Text):
         self.__font = tkf.Font(font=font)
         self.__fw   = self.__font.measure(' ')
         self.__fh   = self.__font.metrics('linespace')
-        self.config(font=font, tabs=self.__font.measure(' '*4))
-       
+        self.config(font=font, tabs=self.__fw*4)
+        self.__loadcarets()
+          
     #CONSTRUCTOR
     def __init__(self, master, *args, **kwargs):
         tk.Text.__init__(self, *args, **{**asdict(Text_t()), **kwargs})
@@ -161,8 +224,11 @@ class EditorText(tk.Text):
         self.__selgrab     = False  #grab any selected data
         self.__seldrag     = False  #drag any selected data
         #vars
+        self.__blinkid     = None   #id of `.after`
+        self.__blinksort   = None   #iterable of sorted faux-caret indexes
         self.__hotbox      = False  #shift and alt are pressed
-        self.__mouseinit   = False  #locks in box-select begin col and begin row bounds
+        self.__hotboxfree  = True
+        self.__hotboxinit  = False  #locks in box-select begin col and begin row bounds
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
         self.__hgrabofs    = None   #horizontal offset from 'current' to sel.start
@@ -180,7 +246,7 @@ class EditorText(tk.Text):
     def __proxy(self, cmd, *args) -> Any:
         #suppress ALL tags except BOXSELECT from the moment the mouse is pressed
         #for hotkeys and dragging
-        if (self.__hotbox or self.__selgrab) and (cmd=='tag') and args:
+        if ((self.__hotbox and self.__hotboxfree) or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
                 if args[1]!='BOXSELECT':
                     return
@@ -191,40 +257,114 @@ class EditorText(tk.Text):
         
         return target   
     
+    #FAUX-CARET
+    def __loadcarets(self) -> None:
+        #store insert on/off times for faux-caret `.after` calls
+        self.__instime = (self['insertofftime'], self['insertontime'])
+        
+        fh = self.__fh    #font height from 'linespace'
+        
+        #make a temp xbm file
+        with tempfile.NamedTemporaryFile(mode='w+b', suffix='.xbm', delete=False) as f:
+            #create prettyprint xbm data
+            xbmdata = ',\n\t'.join(','.join('0xFF' for _ in range(min(8, fh-(8*i)))) for i in range(math.ceil(fh/8)))
+            #write xbm
+            f.write((f"#define image_width {INSWIDTH}\n#define image_height {fh}\n"
+                     "static unsigned char image_bits[] = {\n\t"
+                     f'{xbmdata}}};').encode())
+                     
+        #load xbm files for faux-caret ~ they have to be in this order
+        #this doesn't have a proper name because __fauxcaret entirely manages this
+        self.__  = (tk.BitmapImage(file=f.name, foreground='#999999'),                   #shadow caret 
+                    tk.BitmapImage(file=f.name, foreground=self['background']),          #off caret
+                    tk.BitmapImage(file=f.name, foreground=self['insertbackground']))    #main caret  
+        
+        #delete file
+        os.unlink(f.name)
+    
+    #faux-caret create or config
+    def __fauxcaret(self, index:str, on:bool=True, main:bool=False, cfg:bool=False) -> None:
+        (self.image_create, self.image_configure)[cfg](index, image=self.__[(main<<on)|(on^1)])
+    
+    
+    #blink the faux-caret(s)
+    def __blink(self, on:bool=True):
+        #nothing to do
+        if not self.__boxselect: return
+        
+        #so we only do this once per first blink
+        if not self.__blinksort:
+            #sort image indexes
+            self.__blinksort = sorted((self.index(n) for n in self.image_names()), key=lambda i: float(i))
+            
+        if idx:=self.__blinksort:
+            #flip `on`
+            on = not on
+            #consider direction in forward perspective
+            fw = not self.__lbounds.rv
+            #reconfigure all carets
+            for i in idx: self.__fauxcaret(i, on=on, cfg=True)
+            #reconfigure "active line" caret, if off it will assign off again
+            self.__fauxcaret(idx[-fw], on=on, main=True, cfg=True)
+            #schedule next call
+            self.__blinkid = self.after(self.__instime[on], self.__blink, on)
+            return
+            
+        raise ValueError('__blink: Nothing to sort!')
+    
+    #reset blink
+    def __blinkreset(self) -> None:
+        if not self.__blinkid is None:
+            self['cursor'] = 'xterm'
+            self.after_cancel(self.__blinkid)
+            self.__blinksort = None
+             
     #BOXSELECT
     #swap BOXSELECT for tk.SEL and config
-    def __hotswap(self) -> None:
-        #unsuppresses all tags in .__proxy
-        self.__hotbox    = False          
+    def __hotbox_release(self) -> None:         
         #reset state
-        self.__mouseinit = False 
+        self.__hotboxinit = False 
+        #unsuppresses all tags in .__proxy
+        self.__hotbox     = False 
+        self.__hotboxfree = False
         #replace BOXSELECT tags with tk.SEL
         self.tag_replace('BOXSELECT', tk.SEL)
-        
-        self.focus_set()
+        #start blink
+        self.__blink()
     
-    #reset    
+    #reset box-select data    
     def __boxreset(self) -> None:
+        #reset caret display width
+        self['insertwidth'] = INSWIDTH
         #clean up box-select generated whitespace
         self.__boxclean()
         #turn off box-select
-        self.__boxselect = False
+        self.__boxselect  = False
         #reset bounds
-        self.__lbounds   = None
+        self.__lbounds    = None
+        #reset box start/end
+        self.__boxstart   = None
+        self.__boxend     = None
+        #reset blink
+        self.__blinkreset()
+        self.__hotboxfree = True
         
     #remove any whitespace that box-select created  
     def __boxclean(self, bnd:SelectBounds=None) -> None:
         if bnd:=(bnd or self.__lbounds):
+            #stop blinking
+            self.__blinkreset()
+            #delete faux-carets
+            for n in self.image_names(): self.delete(n)
             #store current caret position
             p = self.caret
             for nr in range(bnd.br, bnd.er+1):
                 b, e = f'{nr}.0', f'{nr}.end'
-                #get entire line
+                #get entire row
                 t  = self.get(b, e)
-                #if the entire line is just space, get rid of the space
+                #if the entire row is just space, get rid of the space
                 #if box-select created it, we get rid of the whole row after we finish with space removal
-                if not len(ILWHITE.sub('', t)):
-                    self.replace_text(b, e, '')
+                if not len(ILWHITE.sub('', t)): self.replace_text(b, e, '')
                 else:
                     #strip only to the right of the column
                     t = t[bnd.ec:].rstrip()
@@ -238,13 +378,12 @@ class EditorText(tk.Text):
             r,_ = map(int, self.index('end-1c').split('.'))
             #if we are on the last row
             if nr == r:
+                #the one drawback to this is it automatically assumes there was never any empty lines at the end of the text
                 #delete the last row until either it isn't blank or `nr` is exhausted
                 while not (l:=len(self.get(f'{nr}.0', 'end-1c'))) and nr>=bnd.br:
                     self.delete(f'{nr-1}.end', 'end-1c')
                     nr-=1
                     self.caret = p 
-            #so things don't get froggy
-            self.focus_set()
      
     #update __lbounds (w)ith (g)rab (o)ffsets
     def __boxmove(self, wgo:bool=True) -> SelectBounds:
@@ -253,10 +392,10 @@ class EditorText(tk.Text):
             #update bounds
             if self.__boxselect:
                 r = r if not wgo else max(1, r+self.__hgrabofs)
-                self.__lbounds = self.__bounds(f'{r}.{c}', f'{r+b.h}.{c+b.w}', ow=True)
+                self.__lbounds = self.__bounds(f'{r}.{c}', f'{r+b.h}.{c+b.w}', ow=True, rv=b.rv)
             #normal select
             else:
-                self.__lbounds = self.__bounds(f'{r}.{c}', self.index(f'{r}.{c}+{b.w}c'), ow=True)
+                self.__lbounds = self.__bounds(f'{r}.{c}', self.index(f'{r}.{c}+{b.w}c'), ow=True, rv=b.rv)
                 
         return self.__lbounds
 
@@ -269,20 +408,16 @@ class EditorText(tk.Text):
 
     #remove every selection-related thing 
     def __cut(self, p:str=None):
-        #make sure the widget is paying attention
-        self.focus_set()
         #get selection ranges
         r = self.tag_ranges(tk.SEL)
         for i in range(0, len(r), 2):
             self.tag_remove(tk.SEL, *r[i:i+2])  #remove tk.SEL tag
-            self.replace_text(*r[i:i+2], '')    #remove selected text
+            self.replace_text(*r[i:i+2], '')    #delete selected text
         self.caret = p or self.caret            #put the caret somewhere
         
     #move all selected text to clipboard
     #this is safe for regular selected text but designed for box-selected text
     def __copy(self) -> None:
-        #make sure the widget is paying attention
-        self.focus_set()
         #get selection ranges
         r = self.tag_ranges(tk.SEL)
         #compile clipboard data from ranges
@@ -327,8 +462,6 @@ class EditorText(tk.Text):
         
         #put the caret at the beginning
         if side==tk.LEFT: self.caret = f'{r}.{c}'
-        #make sure the widget is paying attention
-        self.focus_set()
     
     #EVENTS
     def __handler(self, event) -> None:
@@ -336,7 +469,7 @@ class EditorText(tk.Text):
             if event.state & CONTROL:
                 if event.keysym=='c':
                     #if not boxcopy, normal cut/copy/paste behaviors are used
-                    self.__boxcopy = not self.__mouseinit and self.__boxselect
+                    self.__boxcopy = not self.__hotboxinit and self.__boxselect
                     
                     #BOXSELECT COPY(Cntl+c)
                     if self.__boxcopy:
@@ -345,7 +478,7 @@ class EditorText(tk.Text):
                         
                 elif event.keysym=='x':
                     #if not boxcopy, normal cut/copy/paste behaviors are used
-                    self.__boxcopy = not self.__mouseinit and self.__boxselect
+                    self.__boxcopy = not self.__hotboxinit and self.__boxselect
                     
                     #BOXSELECT CUT(Cntl+x)
                     if self.__boxcopy:
@@ -357,120 +490,110 @@ class EditorText(tk.Text):
                 elif event.keysym=='v':
                     #BOXSELECT PASTE(Cntl+v)
                     if self.__boxcopy:
-                        self.__cut()
+                        self.__cut() #if any
                         #set caret to begin position
                         if b:=self.__lbounds: self.caret = f'{b.br}.{b.bc}'
                         self.__paste()
                         self.__boxreset()    
                         return 'break'
+                        
                 return # get out of here before the next `if`
             
             elif event.keysym=='BackSpace':
                 #BOXSELECT BackSpace
                 if self.__boxselect:
-                    self.__cut()
-                    self.__boxreset()    
-                    return 'break'
-                return # get out of here before the next `if`
+                    #essentially, we are typing nothing
+                    for _,_ in self.__typing_range(False): pass
+                    return 'break'    
+                return
                     
-            #deselects and moves caret to the requested end of the previous selection
+            #deselects and moves caret to the requested end of the box-selection
             #left places the caret at the start and right at the end
             elif event.keysym in ('Left','Right','KP_Left','KP_Right'):
-                #get tag .start, .end, if any
-                b, e = self.tag_bounds(tk.SEL)
-                #remove tk.SEL tag, if any
-                self.tag_move(tk.SEL)
-                #if any
-                self.__boxreset()
-                #set caret to begin or end position based on relevant key
-                if b and e: self.caret = e if 'Right' in event.keysym else b
-                return 'break'
-        
-                    
+                if bnd:=self.__lbounds:
+                    #remove tk.SEL tag, if any
+                    self.tag_move(tk.SEL)
+                    #move caret in requested direction
+                    b, e       = (self.__boxstart,self.__boxend)[::(-bnd.rv) or 1]
+                    self.caret = e if 'Right' in event.keysym else b
+                    #destroy bounds
+                    self.__boxreset()
+                    return 'break'
+                return
+            
             #Shift+Alt regardless of keypress order
             self.__hotbox = (event.keysym in ('Alt_L'  ,'Alt_R'  )) and (event.state & SHIFT) or \
                             (event.keysym in ('Shift_L','Shift_R')) and (event.state & ALT)
                                
             #BOXSELECT
-            if self.__hotbox:
+            if self.__hotbox and self.__hotboxfree:
                 if event.state & BUTTON1:
                     #box-select mousedown
-                    if not self.__mouseinit:
+                    if not self.__hotboxinit:
                         #turn on box-select switches
-                        self.__boxselect   = True
-                        self.__mouseinit = True
+                        self.__boxselect  = True
+                        self.__hotboxinit = True
                         #store last known 'insert' index (ie. NOT 'current')
-                        self.__boxstart  = self.__linsert
+                        self.__boxstart   = self.__linsert
                         return 'break'
                     
                     #box-select mousemove ~ via last keypress (shift or alt) constantly firing
-                    #MOTION events don't fire while keys are pressed
-                    #this index might not exist yet passing it to `.index()` may destroy it
+                    #this index might not exist yet. passing it to `.index()` may destroy it
                     self.__boxend = self.vindex(event.x, event.y)
                     
-                    #if the new bounds differ from the last bounds
-                    if (nb:=self.__bounds()) != (lb:=self.__lbounds):
-                        #remove added whitespace from last call
-                        self.__boxclean()
+                    #never use overwrite here, if you do you will lose the proper selection direction
+                    if (nb:=self.__bounds(ow=False)) == (lb:=self.__lbounds): return
                         
-                        #prime begin and end ranges
-                        b, e = [], []
-                        
-                        #store new ranges (and adjust rows/columns with whitespace, if necessary)
-                        for n in range(nb.br, nb.er+1):
-                            #store beginning and end indexes
-                            b.append(f'{n}.{nb.bc}')
-                            e.append(f'{n}.{nb.ec}')
-                            
-                            #get difference in selection width/height and available space
-                            h = n-int(self.index(f'{n}.end').split('.')[0])
-                            w = nb.ec-int(self.index(f'{n}.end').split('.')[-1])
-                            
-                            #add lines if necessary
-                            if h>0: self.insert(f'{n-1}.end', '\n')
-                            #add spaces, if necessary
-                            if w>0: self.insert(f'{n}.end', ' '*w)
-                        
-                        #we DEFINITELY need to put this back
-                        #after all that arbitrary insertion who knows where the caret is
-                        #also the true end of the box might have been non-existant til now
-                        self.caret = self.__boxend
-                        #clear and draw BOXSELECT
-                        self.tag_move('BOXSELECT', b, e)
-                        #store new bounds
-                        self.__lbounds = nb
+                    #remove whitespace and carets, overwrite last bounds 
+                    self.__boxclean()
+                    self.__lbounds = nb
                     
-                    #suppress built-in behavior
+                    for r, bc, ec in self.__bounds_range('BOXSELECT', bo=nb.rv, eo=1):
+                        #true line end properties and difference from requested line end
+                        le     = self.index(f'{r}.end')
+                        lr, lc = map(int, le.split('.'))
+                        h, w   = r-lr, ec-lc
+                        #add lines/spaces, if necessary
+                        if h>0: self.insert(f'{r-1}.end', '\n')
+                        if w>0: self.insert(le, ' '*w)
+                        
                     return 'break'
                         
-                #bake-in 'BOXSELECT' as tk.SEL                
-                if self.__mouseinit: self.__hotswap()
-                
+                #box-select mouseup ~ deinit hotbox             
+                if self.__hotboxinit: 
+                    self.__hotbox_release()
+                    return 'break'
+                    
                 #store 'insert' position before button1 press
                 self.__linsert = self.caret
-                
-                #suppress built-in behavior
                 return 'break'
-                    
+            else:
+                #BOX-TYPING
+                if self.__boxselect and len(event.char):
+                    #typing_range handles the faux-caret and bounds, we just need to insert
+                    for r,c in self.__typing_range(): self.insert(f'{r}.{c}', event.char)  
+                    return 'break'
+                            
         elif event.type == tk.EventType.KeyRelease:
-            #"bake in" selection
-            if self.__hotbox and (event.keysym in ('Alt_L','Alt_R','Shift_L','Shift_R')): 
-                #swap BOXSELECT for tk.SEL
-                self.__hotswap()
-                #suppress built-in behavior
+            if self.__hotboxinit: 
+                self.__hotbox_release()
                 return 'break'
             
         elif event.type == tk.EventType.ButtonPress:
-            #wake up
-            self.focus_set()
             #get mouse index
-            m  = self.index('current') 
+            mse  = self.index('current') 
             
             #GRAB SELECTED
             #check if mouse index is within a selection
-            if tk.SEL in self.tag_names(m):
-                #if this is a normal selection
-                if not self.__lbounds:
+            if tk.SEL in self.tag_names(mse):
+                #box-selection
+                if b:=self.__lbounds:
+                    #get mouse index row
+                    r,_ = map(int, mse.split('.'))
+                    #store horizontal grab offset
+                    self.__hgrabofs = b.br-r
+                #normal selection
+                else:
                     #create bounds for the selection ~ overwrite boxstart/boxend with min/max indexes
                     self.__lbounds  = self.__bounds(*self.tag_bounds(tk.SEL), ow=True)
                     
@@ -478,32 +601,25 @@ class EditorText(tk.Text):
                 self.tag_replace(tk.SEL, 'BOXSELECT')
                 #turn off all tag add/remove except BOXSELECT in .__proxy
                 self.__selgrab = True
-                #store the drag start position
-                self.__linsert = self.caret
-                
-                if b:=self.__lbounds:
-                    #get mouse index row
-                    r,_ = map(int, m.split('.'))
-                    #store horizontal grab offset
-                    self.__hgrabofs = b.br-r
+                #store the grab position
+                self.__linsert = mse
+                #reset blink
+                self.__blinkreset()
                     
             #if a selection is not under the mouse, reset
-            elif self.__boxselect: self.__boxreset()
+            elif self.__boxselect: 
+                self.__boxreset()
         
         elif event.type == tk.EventType.Motion:
-            #have we moved enough to consider it dragging?
-            if (not self.__seldrag) and self.__selgrab:
-                #if we moved enough
-                if self.caret != self.__linsert: 
-                    #4-way arrows
-                    self['cursor'] = 'fleur'
-                    #turn on dragging state
-                    self.__seldrag = True
+            #if a selection has been grabbed
+            if self.__selgrab:
+                #if you are where you started, then dragging is false
+                self.__seldrag = self.caret != self.__linsert
+                #cursor indicates state
+                self['cursor'] = ('xterm', 'fleur')[self.__seldrag]
+                self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
-            #wake up
-            self.focus_set()
-            
             #GRABBED
             if self.__selgrab:
                 #turn on all tag add/remove in __proxy
@@ -518,8 +634,6 @@ class EditorText(tk.Text):
                     
                 #reset state
                 self.__seldrag = False
-                #regular cursor
-                self['cursor'] = 'xterm'
                 #flip BOXSELECT back to tk.SEL
                 self.tag_replace('BOXSELECT', tk.SEL)
                 
@@ -533,12 +647,12 @@ class EditorText(tk.Text):
                     #turn it into a "multiline caret"
                     mc = self.__bounds(f'{mc.br}.{mc.bc}', f'{mc.er}.{mc.bc}', ow=False)
                 
-                #DROP SELECTED
-                #copy
-                self.__copy()
                 
-                #cut and paste in a new location
+                #DROP SELECTED                                  
                 if bnd:=self.__boxmove(): # move bounds to current location
+                    #COPY
+                    self.__copy()
+                    
                     #CUT
                     #this tracks any effect a deletion has on where we are trying to drop this
                     self.mark_set(INSPNT, (self.caret, f'{bnd.br}.{bnd.bc}')[self.__boxselect])
@@ -557,22 +671,19 @@ class EditorText(tk.Text):
                         self.tag_move(tk.SEL, ip, self.caret)
                         return 
                     
-                    #remove box-select-generated whitespace from __cut position
+                    #remove box-select-generated whitespace and faux-caret(s) from __cut position
                     self.__boxclean(mc)
-                    
                     #PASTE COLUMN 
                     self.__paste()
                     #restore clipboard
                     self.__restore_clipboard()
-                    #move bounds to caret ~ the caret is always at the beginning of a column-paste
+                    #move bounds to caret
                     bnd  = self.__boxmove(False)
-                    #compile new ranges
-                    b, e = [], []
-                    for n in range(bnd.br, bnd.er+1):
-                        b.append(f'{n}.{bnd.bc}')
-                        e.append(f'{n}.{bnd.ec}')
-                    #clear and draw tk.SEL  
-                    self.tag_move(tk.SEL, b, e)
+                    #we're just highlighting something that already exists and making carets
+                    #bounds_range already does both of those things
+                    for _,_,_ in self.__bounds_range(tk.SEL, eo=bnd.rv, ao=True): pass
+                    ##start blink
+                    self.__blink()
                             
   
 #example  
@@ -590,4 +701,5 @@ if __name__ == '__main__':
             ed.insert(tk.END, f'aaa | bbb | ccc | ddd | eee | fff | ggg | hhh ||\n'*ROWS)
     #run        
     App().mainloop()
-
+    
+    
