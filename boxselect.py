@@ -176,12 +176,14 @@ class BoxSelectText(tk.Text):
               
     #virtual index
     def vindex(self, x:int, y:int) -> str:
+        #for determining how to snap x
+        rt = bnd.rt if (bnd:=self.__lbounds) and not (None in bnd) else 1
         #what is the top visible row,col numbers
         r,c = map(int, self.index('@0,0').split('.'))
         #figure out where we are virtually
-        r = round     (y/self.__fh) + r
-        c = math.ceil (x/self.__fw) + c
-        #final index ~ MUST NOT be converted to `.index()` as it probably doesn't exist yet
+        r = round((y-(self.__fh/2))/self.__fh) + r      #a little convoluted but it actually works well
+        c = (math.floor,math.ceil)[rt](x/self.__fw) + c
+        #final index ~ MUST NOT be converted to `.index()` as it possibly doesn't exist yet
         #that's the whole point ~ this is returning where we would be IF every possible index was valid
         return f'{max(r,1)}.{max(c,0)}'
     
@@ -527,10 +529,6 @@ class BoxSelectText(tk.Text):
                         self.__boxreset()    
                         return 'break'
                 
-                elif event.keysym=='y':
-                    pass
-                    #return 'break'
-                
                 return # get out of here before the next `if`
             
             elif event.keysym=='BackSpace':
@@ -739,9 +737,10 @@ if __name__ == '__main__':
             #instantiate editor
             (bst := BoxSelectText(self)).grid(sticky='nswe')
             #columnar text
-            cols = '\n'.join(''.join(f'| {chr(o)*3} |' for o in range(ord('a'),ord('z'))) for _ in range(ROWS))
+            cols = ''.join(f'| {chr(o)*3} |' for o in range(97,123))
+            full = '\n'.join(cols for _ in range(ROWS))
             #create a playground to test column select features
-            bst.text = f'{cols}\n\n\n{cols}'
+            bst.text = f'{full}\n\n\n{full}'
     #run        
     App().mainloop()
 
