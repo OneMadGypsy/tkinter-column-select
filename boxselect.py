@@ -24,7 +24,6 @@ ILWHITE = re.compile(r'[ \t]+')
 # begin col/row, end col/row, (width or len), height, reverse, up
 SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
 
-
 #swatches
 BG      = '#181818' #text background
 FG      = '#DDDDEE' #all foregrounds and caret color
@@ -223,7 +222,6 @@ class BoxSelectText(tk.Text):
             for b, e in zip(x,y):
                 self.tag_add(tag, b, e)
 
-    #TEXT
     #FONT
     def update_font(self, font:Iterable) -> None:
         self.__font = tkf.Font(font=font)
@@ -746,5 +744,4 @@ if __name__ == '__main__':
             bst.text = f'{cols}\n\n\n{cols}'
     #run        
     App().mainloop()
-    
-    
+
