@@ -4,29 +4,22 @@ from typing      import Iterable, Any
 from dataclasses import dataclass, asdict
 import math, re, tempfile, os
 
-# event.state flags
+#event.state flags
 SHIFT   = 0x000001
 CONTROL = 0x000004 
 BUTTON1 = 0x000100
 ALT     = 0x020000
-
-#caret width
-INSWIDTH = 1
-
-#drop insertion point
-INSPNT = 'insertpoint'
-
-#inline whitespace regex
-ILWHITE = re.compile(r'[ \t]+')
-
-# begin col/row, end col/row, (width or len), height, reverse, up
-SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
 
 #swatches
 BG      = '#181818' #text background
 FG      = '#CFCFEF' #all foregrounds and caret color
 SEL_BG  = '#383868' #select background
 SDW_CT  = '#68689F' #shadow caret color
+
+#vars
+INSWIDTH = 1                      #caret width
+INSPNT   = 'insertpoint'          #drop insertion point
+ILWHITE  = re.compile(r'[ \t]+')  #inline whitespace regex
 
 
 #default tk.Text **kwargs for this script
@@ -47,6 +40,10 @@ class Text_t:
     undo            :bool = True
     autoseparators  :bool = True
     maxundo         :int  = 32 #-1 for infinite
+
+
+# begin col/row, end col/row, (width or len), height, reverse, up
+SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
 
 
 #EDITOR
