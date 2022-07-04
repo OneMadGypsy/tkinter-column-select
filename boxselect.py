@@ -254,7 +254,7 @@ class BoxSelectText(tk.Text):
         self.__hotboxinit  = False  #locks in box-select begin col and begin row bounds
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
-        self.__hgrabofs    = None   #horizontal offset from 'current' to sel.start
+        self.__vgrabofs    = None   #vertical offset from 'current' to sel.start
         self.__linsert     = None   #last known 'insert' position ~ used while __hotbox or __selgrab is True
         self.__lbounds     = None   #last bounds that were applied
         self.__lclipbd     = ''     #back-up of last clipboard data
@@ -388,7 +388,7 @@ class BoxSelectText(tk.Text):
             r, c = map(int, self.caret.split('.'))
             #update bounds
             if self.__boxselect:
-                r = r if not wgo else max(1, r+self.__hgrabofs)
+                r = r if not wgo else max(1, r+self.__vgrabofs)
                 self.__lbounds = self.__bounds(f'{r}.{c}', f'{r+b.h}.{c+b.w}', ow=True, dn=b.dn, rt=b.rt)
             #normal select
             else:
@@ -575,7 +575,7 @@ class BoxSelectText(tk.Text):
                 #box-selection
                 if b:=self.__lbounds:
                     r,_ = map(int, mse.split('.')) #get mouse index row
-                    self.__hgrabofs = b.br-r       #store horizontal grab offset
+                    self.__vgrabofs = b.br-r       #store vertical grab offset
                 #normal selection
                 else:
                     #create bounds for the selection ~ overwrite boxstart/boxend with min/max indexes
