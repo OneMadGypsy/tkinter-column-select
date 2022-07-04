@@ -22,7 +22,7 @@ box-(select, cut, copy, paste, type), anysel-(drag, drop), and multiline-caret f
 5) You actually don't have to drag. You could put the caret where you want the selection to start. Press `Shift`+`Alt`, and mousedown where you want the selection to end. If you don't release you can still drag to adjust the selection
 6) In "boxselect mode" you can select in any direction.
 7) Box-selecting may create an unlimited amount of whitespace if it needs to highlight columns that don't actually exist on the "current" line. It also cleans up **all** of the whitespace it generates, every time.
-8) There is a horizontal grab offset for box-selection. This means if you grabbed the (ex:) second row of the selection, you have to release where you would want the second row to drop.
+8) There is a vertical grab offset for box-selection. This means if you grab/drag from the (ex:) second row of the selection, you have to release where you would want the second row to drop.
 
 
 --------------
