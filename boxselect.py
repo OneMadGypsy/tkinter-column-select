@@ -24,9 +24,9 @@ SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
 
 #swatches
 BG      = '#181818' #text background
-FG      = '#DDDDEE' #all foregrounds and caret color
-SEL_BG  = '#383838' #select background
-SDW_CT  = '#999999' #shadow caret color
+FG      = '#CFCFEF' #all foregrounds and caret color
+SEL_BG  = '#383868' #select background
+SDW_CT  = '#68689F' #shadow caret color
 
 
 #default tk.Text **kwargs for this script
@@ -273,6 +273,8 @@ class BoxSelectText(tk.Text):
         if ((self.__hotbox and self.__hotboxfree) or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
                 if args[1]!='BOXSELECT': return
+                
+        if cmd=='insert' and not args: return
         
         #the rest of the time
         try             : target = self.tk.call((self.__p, cmd) + args)#;print(cmd, args)
@@ -341,9 +343,9 @@ class BoxSelectText(tk.Text):
     #BOXSELECT
     #swap BOXSELECT for tk.SEL and config
     def __hotbox_release(self, state:int=0) -> None:
+        self.__hotboxfree = not self.__hotboxinit
         self.__hotboxinit = False 
         self.__hotbox     = False #unsuppresses all tags in .__proxy
-        self.__hotboxfree = False
         self.tag_replace('BOXSELECT', tk.SEL)
         self.__blink()
     
@@ -374,6 +376,16 @@ class BoxSelectText(tk.Text):
                     #strip only to the right of the column
                     self.replace_text(f'{nr}.{bnd.ec}', e, t[bnd.ec:].rstrip())
             self.caret = p  
+            
+            #the end of the entire text is the only place where box-select will create new lines
+            r,_ = map(int, self.index('end-1c').split('.'))
+            #if we are on the last row
+            if nr == r:
+                #delete the last row until either it isn't blank or `nr` is exhausted
+                while not (l:=len(self.get(f'{nr}.0', 'end-1c'))) and nr>=bnd.br:
+                    self.delete(f'{nr-1}.end', 'end-1c')
+                    nr-=1
+                    self.caret = p 
 
     #update __lbounds (w)ith (g)rab (o)ffsets
     def __boxmove(self, wgo:bool=True) -> SelectBounds:
@@ -507,11 +519,6 @@ class BoxSelectText(tk.Text):
                     return 'break'
                 return
             
-            #if event.keysym in ('Alt_L', 'Alt_R') and not (event.state&ALT): 
-                # one alt press converts it's state to 0. that pauses the caret and turns off selecting 
-                # That doesn't work at all for what we want, so we kill it before that point
-                #return 'break'
-            
             #Shift+Alt regardless of keypress order
             self.__hotbox = (event.keysym in ('Alt_L'  ,'Alt_R'  )) and (event.state & SHIFT) or \
                             (event.keysym in ('Shift_L','Shift_R')) and (event.state & ALT)
@@ -549,7 +556,8 @@ class BoxSelectText(tk.Text):
                 if self.__hotboxinit: 
                     self.__hotbox_release(event.state)
                     return 'break'
-                    
+                
+                self.__hotbox = False
                 #store 'insert' position before button1 press
                 self.__linsert  = self.caret
                 return 'break'
@@ -564,11 +572,7 @@ class BoxSelectText(tk.Text):
             if self.__hotboxinit: 
                 self.__hotbox_release(event.state)
                 return 'break'
-            #meh 
-            if event.keysym in ('Alt_L', 'Alt_R') and not (event.state&ALT): 
-                # one alt press converts it's state to 0. that pauses the caret and turns off selecting 
-                # That doesn't work at all for what we want, so we kill it before that point
-                return 'break'
+            self.__hotbox = False
             
         elif event.type == tk.EventType.ButtonPress:
             mse  = self.index('current') #get mouse index
