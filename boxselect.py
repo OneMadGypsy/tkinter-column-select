@@ -118,7 +118,7 @@ class BoxSelectText(tk.Text):
     
     #"DRAW_RECT" (essentially)
     #tags __lbounds ranges and puts a multiline caret on whichever side makes sense
-    #`ao` determines if (b)egin(o)ffset and (e)nd(o)ffset get applied to everything(True) or just begin/end indexes(False)
+    #`ao` determines if (b)egin(o)ffset and (e)nd(o)ffset are applied to everything(True) or just begin/end indexes(False)
     def __bounds_range(self, tag, bo:int=0, eo:int=0, ao:bool=False):
         #hide real caret
         self['insertwidth'] = 0
