@@ -42,21 +42,17 @@ class Text_t:
     maxundo         :int  = 32 #-1 for infinite
 
 
-# begin col/row, end col/row, (width or len), height, reverse, up
-SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
-
-
-#EDITOR
-class BoxSelectText(tk.Text):
-    ''' NICETIES '''
-    # CARET POSITIONING
+#this adds some extra generic behavior to tk.Text, and automates it's config to our purposes
+#it's turned into it's own thing so we can get generic scripts out of the box-select code
+class Textra(tk.Text): 
+    #CARET POSITIONING
     @property
     def caret(self) -> str: return self.index('insert')
 
     @caret.setter
     def caret(self, index:str) -> None: self.mark_set('insert', index)
     
-    # TEXT    
+    #TEXT    
     @property
     def text(self) -> str: return self.get('1.0', f'{tk.END}-1c')
 
@@ -72,12 +68,51 @@ class BoxSelectText(tk.Text):
     def append_text(self, text:str) -> None:
         self.insert(f'{tk.END}-1c', text)
         
-    # LINE
+    #LINE
     def dlineinfo(self, index=tk.INSERT) -> tuple:
         self.update_idletasks()
         return super().dlineinfo(index)
+       
+    #TAGS
+    # No exception .start, .end
+    def tag_bounds(self, tag:str) -> tuple:
+        if (tr:=self.tag_ranges(tag)) and len(tr)>1: 
+            return map(str,(tr[0],tr[-1]))
+        return None, None
+       
+    #replace all instances of `tag_in` with `tag_out`
+    def tag_replace(self, tag_in:str, tag_out:str) -> None:
+        r = self.tag_ranges(tag_in)
+        #swap the tags
+        for i in range(0, len(r), 2):
+            self.tag_remove(tag_in , *r[i:i+2])
+            self.tag_add   (tag_out, *r[i:i+2])
+           
+    #move all instances of a tag to a new location
+    #acts as `tag_remove()` when `b` and/or `e` are None
+    def tag_move(self, tag:str, b:Iterable=None, e:Iterable=None) -> None:
+        x, y = self.tag_bounds(tag)
+        
+        if x and y: self.tag_remove(tag, x, y)
+        
+        if b and e:
+            x = b if isinstance(b, (list,tuple)) else (b,)
+            y = e if isinstance(e, (list,tuple)) else (e,)
+            for b, e in zip(x,y):
+                self.tag_add(tag, b, e)
     
-    ''' ENGINE '''       
+    #CONSTRUCTOR
+    def __init__(self, master, *args, **kwargs):
+        tk.Text.__init__(self, master, *args, **{**asdict(Text_t()), **kwargs})
+
+
+#backbone of the entire operation
+#begin col/row, end col/row, (width or len), height, reverse, up
+SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
+    
+
+#BOX-SELECT
+class BoxSelectText(Textra):
     #POSITIONING
     #absolutely do NOT convert anything within this method to an `.index(...)`
     #some of the descriptions below may not exist yet
@@ -170,62 +205,27 @@ class BoxSelectText(tk.Text):
             self.__blink()
               
     #virtual index
-    def vindex(self, x:int, y:int) -> str:
-        #for determining how to snap x
+    def __vindex(self, x:int, y:int) -> str:
+        #for determining how to horizontally snap caret
         rt = bnd.rt if (bnd:=self.__lbounds) and not (None in bnd) else 1
-        #what are the top-left visible row,col numbers
+        #the top-left visible row,col numbers
         r,c = map(int, self.index('@0,0').split('.'))
         
         #figure out where we are virtually
-        r = round((y-(self.__fh/2))/self.__fh) + r
+        r = round(y/self.__fh-0.50) + r
         c = (math.floor,math.ceil)[rt](x/self.__fw) + c
         
-        #return where we would be if every possible index was valid
+        #where we would be if every possible index was valid
         return f'{max(r,1)}.{max(c,0)}'
     
     #box-select faux-caret attaches to mouse cursor side of selection, and main faux-caret follows mouse cursor
     def __index(self, start:str, end:str, dn:bool, rt:bool) -> str:
         r, c = zip(map(int, start.split('.')), map(int, end.split('.')))
         return f'{r[dn]}.{c[rt]}'
-  
-    #TAGS
-    # No exception .start, .end
-    def tag_bounds(self, tag:str) -> tuple:
-        if (tr:=self.tag_ranges(tag)) and len(tr)>1: 
-            return map(str,(tr[0],tr[-1]))
-        return None, None
        
-    #replace all instances of `tag_in` with `tag_out`
-    def tag_replace(self, tag_in:str, tag_out:str) -> None:
-        r = self.tag_ranges(tag_in)
-        #swap the tags
-        for i in range(0, len(r), 2):
-            self.tag_remove(tag_in , *r[i:i+2])
-            self.tag_add   (tag_out, *r[i:i+2])
-           
-    #move all instances of a tag to a new location
-    def tag_move(self, tag:str, b:Iterable=None, e:Iterable=None) -> None:
-        x, y = self.tag_bounds(tag)
-        
-        if x and y: self.tag_remove(tag, x, y)
-        
-        if b and e:
-            x = b if isinstance(b, (list,tuple)) else (b,)
-            y = e if isinstance(e, (list,tuple)) else (e,)
-            for b, e in zip(x,y):
-                self.tag_add(tag, b, e)
-
-    #FONT
-    def update_font(self, font:Iterable) -> None:
-        self.__font = tkf.Font(font=font)
-        self.__fw   = self.__font.measure(' ')
-        self.__fh   = self.__font.metrics('linespace')
-        self.config(font=font, tabs=self.__fw*4)
-        self.__loadcarets()
-          
     #CONSTRUCTOR
     def __init__(self, master, *args, **kwargs):
-        tk.Text.__init__(self, *args, **{**asdict(Text_t()), **kwargs})
+        Textra.__init__(self, master, *args, **kwargs)
         
         #box-select tag
         self.tag_configure('BOXSELECT' , background=self['selectbackground'])
@@ -277,6 +277,15 @@ class BoxSelectText(tk.Text):
         
         return target   
     
+    #FONT
+    def update_font(self, font:Iterable) -> None:
+        self.__font = tkf.Font(font=font)
+        self.__fw   = self.__font.measure(' ')
+        self.__fh   = self.__font.metrics('linespace')
+        self.config(font=font, tabs=self.__fw*4)
+        #create faux-carets for this font height
+        self.__loadcarets()
+     
     #FAUX-CARET
     def __loadcarets(self) -> None:
         #store insert on/off times for faux-caret `.after` calls
@@ -338,9 +347,9 @@ class BoxSelectText(tk.Text):
     #BOXSELECT
     #swap BOXSELECT for tk.SEL and config
     def __hotbox_release(self, state:int=0) -> None:
-        self.__hotboxfree = False
-        self.__hotboxinit = False 
+        self.__hotboxfree = False #unsuppresses all tags in .__proxy 
         self.__hotbox     = False #unsuppresses all tags in .__proxy
+        self.__hotboxinit = False
         self.tag_replace('BOXSELECT', tk.SEL)
         self.__blink()
     
@@ -528,7 +537,7 @@ class BoxSelectText(tk.Text):
                     
                     #box-select mousemove ~ via last keypress (shift or alt) constantly firing
                     #this index might not exist yet. passing it to `.index()` may destroy it
-                    self.__boxend = self.vindex(event.x, event.y)
+                    self.__boxend = self.__vindex(event.x, event.y)
                     
                     #never use overwrite here, if you do you will lose the proper selection direction
                     if (bnd:=self.__bounds(ow=False)) == self.__lbounds: return
