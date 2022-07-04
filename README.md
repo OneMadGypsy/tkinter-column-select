@@ -18,7 +18,7 @@ box-(select, cut, copy, paste, redo, type) and sel-(drag, drop) for tk.Text
 1) For the typing feature, make a box-selection (with or without width) and start typing. A box selection that has no width will produce a "multiline-caret".
 2) Pressing `BackSpace` while in "multiline-caret mode" will perform a `BackSpace` on every active line
 3) If you start to `drag` but change your mind, returning the cursor to where you started and releasing will abort `drop`. You can tell you are back where you started because the mouse cursor will return to `xterm`.
-4) Pressing any `Left` or `Right` while in "boxselect mode" will deselect and set the caret at the beginning(left) or end(right) of the former selection. This may not work for regular selections yet. I can't remember if I enabled it.
+4) Pressing any `Left` or `Right` key while in "boxselect mode" will deselect and set the caret at the beginning(left) or end(right) of the former selection. This may not work for regular selections yet. I can't remember if I enabled it.
 
 --------------
 
