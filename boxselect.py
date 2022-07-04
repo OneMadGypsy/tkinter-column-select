@@ -273,8 +273,6 @@ class BoxSelectText(tk.Text):
         if ((self.__hotbox and self.__hotboxfree) or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
                 if args[1]!='BOXSELECT': return
-                
-        if cmd=='insert' and not args: return
         
         #the rest of the time
         try             : target = self.tk.call((self.__p, cmd) + args)#;print(cmd, args)
