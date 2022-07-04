@@ -23,11 +23,12 @@ box-(select, cut, copy, paste, type) and anysel-(drag, drop) for tk.Text
 6) In "boxselect mode" you can select in any direction
 7) boxselecting may create an unlimited amount of whitespace if it needs to highlight columns that don't actually exist on the "current" line. It also cleans up **all** of the whitespace it generates, every time. At one point I even had it truncating columns that end in whitespace. I can't remember if I ultimately decided that it was a decision which selection should not make, and took it out.
 8) There is a horizontal grab offset for boxselection. This means if you (ex) grabbed the second row of the selection you have to release where you would want the second row to drop.
+
+
 --------------
 
 **Issues:**
 
-1) Sometimes releasing `Alt` to come out of the hotkey combo will pause the display. If this happens press `Alt` again. There are commented out spots in the code where you can see I am trying to suppress this behavior, and I'm all over the target. I haven't found the proper combo to kill the issue. However, if you release the hotkeys in the same order you pressed them it tends to be fine.
-2) Sometimes releasing `Alt` to come out of the hotkey combo will turn off your ability to select. If this happens press `Alt` again.
-3) Releasing `Shift` and `Alt` before releasing the mouse is a mess. Release the mouse first.
+1) Sometimes releasing `Alt` to come out of the hotkey combo will pause the display. If this happens press `Alt` again. 
+2) Releasing `Shift` and `Alt` before releasing the mouse is a mess. Release the mouse first.
 
