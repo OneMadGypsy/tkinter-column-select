@@ -255,7 +255,6 @@ class BoxSelectText(tk.Text):
         self.__hotbox      = False  #shift and alt are pressed
         self.__hotboxfree  = True
         self.__hotboxinit  = False  #locks in box-select begin col and begin row bounds
-        self.__hotboxmouse = False  
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
         self.__hgrabofs    = None   #horizontal offset from 'current' to sel.start
@@ -344,7 +343,7 @@ class BoxSelectText(tk.Text):
     #BOXSELECT
     #swap BOXSELECT for tk.SEL and config
     def __hotbox_release(self, state:int=0) -> None:
-        self.__hotboxfree = not self.__hotboxinit
+        self.__hotboxfree = False
         self.__hotboxinit = False 
         self.__hotbox     = False #unsuppresses all tags in .__proxy
         self.tag_replace('BOXSELECT', tk.SEL)
@@ -520,17 +519,12 @@ class BoxSelectText(tk.Text):
             self.__hotbox = (event.keysym in ('Alt_L'  ,'Alt_R'  )) and (event.state & SHIFT) or \
                             (event.keysym in ('Shift_L','Shift_R')) and (event.state & ALT)
 
-            #if hotbox keys are released before mouse
-            if event.state & BUTTON1:
-                if (not self.__hotbox) and self.__hotboxmouse:
-                    return 'break'
                          
             #BOXSELECT
             if self.__hotbox:
                 if event.state & BUTTON1 and self.__hotboxfree:
                     #box-select mousedown
                     if not self.__hotboxinit:
-                        self.__hotboxmouse = True
                         self.__boxselect   = True
                         self.__hotboxinit  = True
                         #store last known 'insert' index
@@ -555,14 +549,11 @@ class BoxSelectText(tk.Text):
                         
                     return 'break'
                         
-                #box-select mouseup ~ deinit hotbox     
-                self.__hotboxmouse = False        
+                #box-select mouseup ~ deinit hotbox 
                 if self.__hotboxinit: 
                     self.__hotbox_release(event.state)
                     return 'break'
                 
-                #this catches pressing and releasing hotbox without ever clicking the mouse
-                self.__hotbox = False
                 #store 'insert' position before BUTTON1 press
                 self.__linsert  = self.caret
                 return 'break'
@@ -613,8 +604,6 @@ class BoxSelectText(tk.Text):
                 self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
-            #hotbox mouse released ~ 
-            self.__hotboxmouse = False
             #GRABBED
             if self.__selgrab:
                 #turn on all tag add/remove in __proxy
