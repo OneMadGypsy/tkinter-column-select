@@ -27,7 +27,7 @@ box-(select, cut, copy, paste, type), anysel-(drag, drop), and multiline-caret f
 
 --------------
 
-**Issues:**
+**Glitches:**
 
-1) Sometimes releasing `Alt` to come out of the hotkey combo will pause the display. If this happens press `Alt` again. 
+1) Very rarely, releasing `Alt` to come out of the hotkey combo will pause the display. If this happens press `Alt` again. 
 
