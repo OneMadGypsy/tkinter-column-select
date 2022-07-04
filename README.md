@@ -22,7 +22,7 @@ box-(select, cut, copy, paste, type) and anysel-(drag, drop) for tk.Text
 5) You actually do not have to drag. You could put the caret where you want the selection to start. Press `Shift`+`Alt`, and mousedown where you want the selection to end. If you don't release you can still drag to adjust the selection
 6) In "boxselect mode" you can select in any direction
 7) boxselecting may create an unlimited amount of whitespace if it needs to highlight columns that don't actually exist on the "current" line. It also cleans up **all** of the whitespace it generates, every time. At one point I even had it truncating columns that end in whitespace. I can't remember if I ultimately decided that it was a decision which selection should not make, and took it out.
-
+8) There is a horizontal grab offset for boxselection. This means if you (ex) grabbed the second row of the selection you have to release where you would want the second row to drop.
 --------------
 
 **Issues:**
