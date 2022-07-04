@@ -107,7 +107,7 @@ class Textra(tk.Text):
 
 
 #backbone of the entire operation
-#begin col/row, end col/row, (width or len), height, reverse, up
+#begin col/row, end col/row, (width or len), height, down, up
 SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
     
 
