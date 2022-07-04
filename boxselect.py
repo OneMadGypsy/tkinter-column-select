@@ -255,6 +255,7 @@ class BoxSelectText(tk.Text):
         self.__hotbox      = False  #shift and alt are pressed
         self.__hotboxfree  = True
         self.__hotboxinit  = False  #locks in box-select begin col and begin row bounds
+        self.__hotboxmouse = False  
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
         self.__hgrabofs    = None   #horizontal offset from 'current' to sel.start
@@ -506,32 +507,34 @@ class BoxSelectText(tk.Text):
                     return 'break'    
                 return
                     
-            #deselects and moves caret to the requested end of the box-selection
+            #deselects and moves caret to the requested end of any selection
             #left places the caret at the start and right at the end
             elif event.keysym in ('Left','Right','KP_Left','KP_Right'):
-                if bnd:=self.__lbounds:
-                    self.tag_move(tk.SEL)
-                    #move caret in requested direction
-                    b, e       = (self.__boxstart,self.__boxend)[::(-bnd.rv) or 1]
-                    self.caret = e if 'Right' in event.keysym else b
-                    #destroy bounds
+                if b:= self.__bounds(*self.tag_bounds(tk.SEL)):
                     self.__boxreset()
+                    self.caret = f'{b.er}.{b.ec}' if 'Right' in event.keysym else f'{b.br}.{b.bc}'
                     return 'break'
                 return
             
             #Shift+Alt regardless of keypress order
             self.__hotbox = (event.keysym in ('Alt_L'  ,'Alt_R'  )) and (event.state & SHIFT) or \
                             (event.keysym in ('Shift_L','Shift_R')) and (event.state & ALT)
-                               
+
+            #if hotbox keys are released before mouse
+            if event.state & BUTTON1:
+                if (not self.__hotbox) and self.__hotboxmouse:
+                    return 'break'
+                         
             #BOXSELECT
             if self.__hotbox:
                 if event.state & BUTTON1 and self.__hotboxfree:
                     #box-select mousedown
                     if not self.__hotboxinit:
-                        self.__boxselect  = True
-                        self.__hotboxinit = True
-                        #store last known 'insert' index (ie. NOT 'current')
-                        self.__boxstart   = self.__linsert
+                        self.__hotboxmouse = True
+                        self.__boxselect   = True
+                        self.__hotboxinit  = True
+                        #store last known 'insert' index
+                        self.__boxstart    = self.__linsert
                         return 'break'
                     
                     #box-select mousemove ~ via last keypress (shift or alt) constantly firing
@@ -539,26 +542,28 @@ class BoxSelectText(tk.Text):
                     self.__boxend = self.vindex(event.x, event.y)
                     
                     #never use overwrite here, if you do you will lose the proper selection direction
-                    if (nb:=self.__bounds(ow=False)) == (lb:=self.__lbounds): return
+                    if (bnd:=self.__bounds(ow=False)) == self.__lbounds: return
                         
-                    #remove whitespace and carets, overwrite last bounds 
+                    #remove whitespace and carets from last bounds, overwrite last bounds 
                     self.__boxclean()
-                    self.__lbounds = nb
+                    self.__lbounds = bnd
                     
-                    for r, bc, ec in self.__bounds_range('BOXSELECT', bo=not nb.rt, eo=1):
+                    #draw rect
+                    for r, bc, ec in self.__bounds_range('BOXSELECT', bo=not bnd.rt, eo=1):
                         _, lc = map(int, self.index(f'{r}.end').split('.'))
-                        #add columns if necessary
-                        self.insert(f'{r}.{ec}', ' '*max(0, ec-lc))
+                        self.insert(f'{r}.{ec}', ' '*max(0, ec-lc)) #add columns if necessary
                         
                     return 'break'
                         
-                #box-select mouseup ~ deinit hotbox             
+                #box-select mouseup ~ deinit hotbox     
+                self.__hotboxmouse = False        
                 if self.__hotboxinit: 
                     self.__hotbox_release(event.state)
                     return 'break'
                 
+                #this catches pressing and releasing hotbox without ever clicking the mouse
                 self.__hotbox = False
-                #store 'insert' position before button1 press
+                #store 'insert' position before BUTTON1 press
                 self.__linsert  = self.caret
                 return 'break'
             else:
@@ -572,6 +577,7 @@ class BoxSelectText(tk.Text):
             if self.__hotboxinit: 
                 self.__hotbox_release(event.state)
                 return 'break'
+            #this catches pressing and releasing hotbox without ever clicking the mouse
             self.__hotbox = False
             
         elif event.type == tk.EventType.ButtonPress:
@@ -607,6 +613,8 @@ class BoxSelectText(tk.Text):
                 self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
+            #hotbox mouse released ~ 
+            self.__hotboxmouse = False
             #GRABBED
             if self.__selgrab:
                 #turn on all tag add/remove in __proxy
@@ -622,9 +630,8 @@ class BoxSelectText(tk.Text):
                 self.__seldrag = False
                 self.tag_replace('BOXSELECT', tk.SEL)
                 
-                #make a "multiline caret" to represent every row the deleted text was on, but with no width
-                #this is so __boxclean works down every row in the caret column instead of regarding bounds that no longer exist
-                #we have to get this data before we actually delete
+                #make a "multiline caret" so __boxclean works down every row... 
+                #in what will be the only remaining column, after deletion
                 mc = None
                 if self.__boxselect:
                     mc = self.__bounds(*self.tag_bounds(tk.SEL), ow=False)
@@ -638,13 +645,12 @@ class BoxSelectText(tk.Text):
                     #CUT
                     #this tracks any effect a deletion has on where we are trying to drop this
                     self.mark_set(INSPNT, (self.caret, f'{bnd.br}.{bnd.bc}')[self.__boxselect])
-                    self.__cut(INSPNT) #delete selection and move caret to insertion point
+                    self.__cut(INSPNT)     #delete selection and move caret to insertion point
                     
                     #PASTE NORMAL
                     if not self.__boxselect:
                         ip = self.caret
                         self.event_generate('<<Paste>>')
-                        #the caret is always at the end of a regular paste
                         self.__lbounds = self.__bounds(ip, self.caret, ow=True)
                         self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
                         return 
@@ -653,9 +659,8 @@ class BoxSelectText(tk.Text):
                     #PASTE COLUMN 
                     self.__paste()
                     self.__restore_clipboard()
-                    bnd  = self.__boxmove(False) #move bounds to caret
-                    #we're just highlighting something that already exists and making carets
-                    #bounds_range already does both of those things
+                    bnd = self.__boxmove(False) #move bounds to caret
+                    #draw rect
                     for _,_,_ in self.__bounds_range(tk.SEL, eo=not bnd.rt, ao=True): pass
                     self.__blink()
                             
