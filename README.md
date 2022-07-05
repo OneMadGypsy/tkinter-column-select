@@ -34,4 +34,4 @@
 
 ## Glitches:
 
-- On very rare occassions, releasing `Alt` to come out of the hotkey combo, will result in the window gaining focus. If this happens just press `Alt` again.
+- On very rare occassions, releasing `Alt` from the hotkey combo will result in the window gaining focus, and the text area seeming to freeze. If this happens just press `Alt` again.
