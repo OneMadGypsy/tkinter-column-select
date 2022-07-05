@@ -555,6 +555,7 @@ class BoxSelectText(Textra):
                         if adv<0: self.delete(f'{r}.{c}', f'{r}.{c+abs(adv)}')
                     return 'break'    
                 return
+            
             elif event.keysym=='Return':
                 #BOXSELECT Return ~ deselects leaving the multiline-caret behind wherever it already was
                 if self.__boxselect:
