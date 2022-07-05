@@ -35,4 +35,4 @@
 
 ## Glitches:
 
-- On very rare occassions, releasing `Alt` from the hotkey combo will result in the window gaining focus, and the text area seeming to freeze. If this happens just press `Alt` again. _This issue may be resolved_.
+- On very rare occassions, releasing `Alt` from the hotkey combo will result in the window gaining focus, and the text area seeming to freeze. If this happens just press `Alt` again. ~ _This issue may be resolved. Conditions have been added that force focus back to the text widget. The issue was already hard to duplicate so there is no way to be positive it's fixed. Time will tell._
