@@ -5,22 +5,31 @@ from dataclasses import dataclass, asdict
 import math, re, tempfile, os
 
 #event.state flags
-SHIFT   = 0x000001
-CONTROL = 0x000004 
-BUTTON1 = 0x000100
-ALT     = 0x020000
+SHIFT    = 0x000001
+CONTROL  = 0x000004 
+BUTTON1  = 0x000100
+ALT      = 0x020000
+ARROWKEY = 0x040000
+ALTSHIFT = ALT|SHIFT
 
 #swatches
-BG      = '#181818' #text background
-FG      = '#CFCFEF' #all foregrounds and caret color
-SEL_BG  = '#383868' #select background
-SDW_CT  = '#68689F' #shadow caret color
+BG       = '#181818' #text background
+FG       = '#CFCFEF' #all foregrounds and caret color
+SEL_BG   = '#383868' #select background
+SDW_CT   = '#68689F' #shadow caret color
 
 #vars
 INSWIDTH = 1                      #caret width
 INSPNT   = 'insertpoint'          #drop insertion point
 ILWHITE  = re.compile(r'[ \t]+')  #inline whitespace regex
 
+#arrows ~ for various key conditions
+HARROWS  = ('Left','KP_Left','Right','KP_Right')
+VARROWS  = ('Up','KP_Up','Down','KP_Down')
+ARROWS   = HARROWS+VARROWS
+ALTS     = ('Alt_L', 'Alt_R')
+SHIFTS   = ('Shift_L', 'Shift_R')
+ALTSHIFTS= ALTS+SHIFTS
 
 #default tk.Text **kwargs for this script
 @dataclass 
@@ -117,36 +126,36 @@ class BoxSelectText(Textra):
     #absolutely do NOT convert anything within this method to an `.index(...)`
     #some of the descriptions below may not exist yet
     def __bounds(self, b:str=None, e:str=None, dn:bool=None, rt:bool=None, ow:bool=False) -> SelectBounds:
-        b, e = (b or self.__boxstart), (e or self.__boxend)
-        
-        #parse row/col positions
-        b_ = [*map(int, b.split('.'))]
-        e_ = [*map(int, e.split('.'))]
-        
-        if self.__boxselect:
-            #row and col positions ~ min/max each
-            (br,er),(bc,ec) = (sorted(x) for x in zip(b_,e_))
-            #width, height 
-            w, h = ec-bc, er-br
-        #regular selection
-        else:
-            #row and col positions ~ min/max row
-            (br,bc),(er,ec) = b_, e_
-            (br,er)         = sorted((br,er))
-            #len, height 
-            w, h = len(self.get(f'{br}.{bc}', f'{er}.{ec}')), er-br
+        if (b:=(b or self.__boxstart)) and (e:=(e or self.__boxend)):
+            #parse row/col positions
+            b_ = [*map(int, b.split('.'))]
+            e_ = [*map(int, e.split('.'))]
             
-        #overwrite    
-        if ow:
-            self.__boxstart = f'{br}.{bc}'
-            self.__boxend   = f'{er}.{ec}'
-         
-        #selection direction
-        dn = (b_[0]<e_[0]) if dn is None and (b_ and e_) else dn
-        rt = (b_[1]<e_[1]) if rt is None and (b_ and e_) else rt
+            if self.__boxselect:
+                #row and col positions ~ min/max each
+                (br,er),(bc,ec) = (sorted(x) for x in zip(b_,e_))
+                #width, height 
+                w, h = ec-bc, er-br
+            #regular selection
+            else:
+                #row and col positions ~ min/max row
+                (br,bc),(er,ec) = b_, e_
+                (br,er)         = sorted((br,er))
+                #len, height 
+                w, h = len(self.get(f'{br}.{bc}', f'{er}.{ec}')), er-br
+                
+            #overwrite    
+            if ow:
+                self.__boxstart = f'{br}.{bc}'
+                self.__boxend   = f'{er}.{ec}'
             
-        #`h` is actually a count of how many lines come after the first one
-        return SelectBounds(bc, br, ec, er, w, h, dn, rt) 
+            #selection direction
+            dn = (b_[0]<e_[0]) if dn is None and (b_ and e_) else dn
+            rt = (b_[1]<e_[1]) if rt is None and (b_ and e_) else rt
+                
+            #`h` is actually a count of how many lines come after the first one
+            return SelectBounds(bc, br, ec, er, w, h, dn, rt) 
+        return None
     
     #"DRAW_RECT" (essentially)
     #tags __lbounds ranges and puts a multiline caret on whichever side makes sense
@@ -203,7 +212,17 @@ class BoxSelectText(Textra):
             self.caret = self.__index(*i, bnd.dn, bnd.rt)
             self.__fauxcaret(self.caret, main=True, cfg=True) #config main faux-caret
             self.__blink()
-              
+          
+    #arrow index
+    def __aindex(self, keysym:str) -> str:
+        r, c = map(int, self.caret.split('.'))
+        for k,(r2,c2) in self.__arrows.items():
+            if k in keysym:
+                r += r2; c += c2
+                self.caret = f'{max(1,r)}.{max(0,c)}'
+                return self.caret
+        return None
+    
     #virtual index
     def __vindex(self, x:int, y:int) -> str:
         #for determining how to horizontally snap caret
@@ -230,7 +249,7 @@ class BoxSelectText(Textra):
         #box-select tag
         self.tag_configure('BOXSELECT' , background=self['selectbackground'])
         
-        #capture character width and height, primarily
+        #capture character width and height, make faux-carets for this font height
         self.update_font(self['font'])
         
         #selection insertion point
@@ -238,7 +257,7 @@ class BoxSelectText(Textra):
         self.mark_gravity(INSPNT, tk.LEFT)
         
         #add listeners
-        for evt in ('KeyPress','KeyRelease','ButtonPress-1','ButtonRelease-1','Motion','<Paste>'): 
+        for evt in ('KeyPress','KeyRelease','ButtonPress-1','ButtonRelease-1','Motion'):
             self.bind(f'<{evt}>', self.__handler)
         
         #features
@@ -247,17 +266,19 @@ class BoxSelectText(Textra):
         self.__selgrab     = False  #grab any selected data
         self.__seldrag     = False  #drag any selected data
         #vars
-        self.__blinkid     = None   #id of `.after`
-        self.__blinksort   = None   #iterable of sorted faux-caret indexes
-        self.__hotbox      = False  #shift and alt are pressed
-        self.__hotboxfree  = True
-        self.__hotboxinit  = False  #locks in box-select begin col and begin row bounds
         self.__boxstart    = None   #box bounds start position
         self.__boxend      = None   #box bounds end position
         self.__vgrabofs    = None   #vertical offset from 'current' to sel.start
-        self.__linsert     = None   #last known 'insert' position ~ used while __hotbox or __selgrab is True
+        self.__linsert     = None   #last known 'insert' position ~ used while __as or __selgrab is True
         self.__lbounds     = None   #last bounds that were applied
         self.__lclipbd     = ''     #back-up of last clipboard data
+        
+        self.__as_reset()           #prime ALT+SHIFT properties
+        self.__blinkreset()         #prime blink properties
+        
+        #arrow key movement for arrow-key-box-select
+        self.__arrows = {'Down':( 1,0),'Right':(0, 1),
+                         'Up'  :(-1,0),'Left' :(0,-1)}
         
         #hijack tcl commands stream so we can pinpoint various commands
         self.__p = self._w + "_orig"
@@ -267,7 +288,7 @@ class BoxSelectText(Textra):
     #PROXY
     def __proxy(self, cmd, *args) -> Any:
         #boxselect and dragging only allow the BOXSELECT tag from the moment the mouse is pressed
-        if ((self.__hotbox and self.__hotboxfree) or self.__selgrab) and (cmd=='tag') and args:
+        if ((self.__as and self.__as_free) or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
                 if args[1]!='BOXSELECT': return
         
@@ -334,36 +355,43 @@ class BoxSelectText(Textra):
                 self.__blinkid = self.after(self.__instime[on], self.__blink, on)
                 return
             
-        raise ValueError('__blink: Nothing to sort!')
+        #raise ValueError('__blink: Nothing to sort!')
     
     #reset blink data
     def __blinkreset(self) -> None:
-        if not (self.__blinkid is None):
-            self.after_cancel(self.__blinkid)
-            self.__blinksort = None
-            self.__blinkid   = None
-            self['cursor']   = 'xterm'
-             
-    #BOXSELECT
-    #swap BOXSELECT for tk.SEL and config
-    def __hotbox_release(self, state:int=0) -> None:
-        self.__hotboxfree = False #unsuppresses all tags in .__proxy 
-        self.__hotbox     = False #unsuppresses all tags in .__proxy
-        self.__hotboxinit = False
+        try             : self.after_cancel(self.__blinkid) if not (self.__blinkid is None) else None
+        except Exception: pass
+        
+        self.__blinkid   = None
+        self.__blinksort = None
+        self['cursor']   = 'xterm'
+       
+    #ALT+SHIFT
+    def __as_reset(self) -> None:
+        self.__as        = False #unsuppresses all tags in .__proxy
+        self.__as_free   = True  #allows ALT+SHIFT hotkey 
+        self.__as_commit = False
+        self.__as_arrow  = False
+        self.__as_mouse  = False
+          
+    def __as_release(self, state:int=0) -> None:
         self.tag_replace('BOXSELECT', tk.SEL)
+        self.__as_reset()
+        self.__as_free = not self.__boxselect #adjust
         self.__blink()
-    
+        
+    #BOXSELECT
     #reset box-select data    
     def __boxreset(self) -> None:
         self['insertwidth'] = INSWIDTH #reset caret display width
-        self.tag_move(tk.SEL)
+        self.tag_move(tk.SEL)          #delete tk.SEL tags
+        self.__as_reset()
         self.__boxclean()
         self.__blinkreset()
-        self.__boxselect  = False
-        self.__lbounds    = None
-        self.__boxstart   = None
-        self.__boxend     = None
-        self.__hotboxfree = True       #allows box-select hotkeys
+        self.__boxselect = False
+        self.__boxstart  = None
+        self.__boxend    = None
+        self.__lbounds   = None
         
     #remove any whitespace that box-select created  
     def __boxclean(self, bnd:SelectBounds=None) -> None:
@@ -469,10 +497,15 @@ class BoxSelectText(Textra):
     #EVENTS
     def __handler(self, event) -> None:
         if event.type == tk.EventType.KeyPress:
+            #Shift+Alt one way or another
+            self.__as = (event.keysym in ALTS  ) and (event.state & SHIFT) or \
+                        (event.keysym in SHIFTS) and (event.state & ALT  ) or \
+                        (event.state & ALTSHIFT) == ALTSHIFT
+                            
             if event.state & CONTROL:
                 if   event.keysym=='c':
                     #if not boxcopy, normal cut/copy/paste behaviors are used
-                    self.__boxcopy = not self.__hotboxinit and self.__boxselect
+                    self.__boxcopy = not self.__as_commit and self.__boxselect
                     
                     #BOXSELECT COPY(Cntl+c)
                     if self.__boxcopy:
@@ -481,7 +514,7 @@ class BoxSelectText(Textra):
                         
                 elif event.keysym=='x':
                     #if not boxcopy, normal cut/copy/paste behaviors are used
-                    self.__boxcopy = not self.__hotboxinit and self.__boxselect
+                    self.__boxcopy = not self.__as_commit and self.__boxselect
                     
                     #BOXSELECT CUT(Cntl+x)
                     if self.__boxcopy:
@@ -510,34 +543,41 @@ class BoxSelectText(Textra):
                     return 'break'    
                 return
                     
-            #deselects and moves caret to the requested end of any selection
-            #left places the caret at the start and right at the end
-            elif event.keysym in ('Left','Right','KP_Left','KP_Right'):
+            #deselects and moves caret to the start(left) or end(right) of the former selection
+            #works for any type of selection
+            elif (event.keysym in HARROWS) and (not self.__as):
                 if b:= self.__bounds(*self.tag_bounds(tk.SEL)):
                     self.__boxreset()
                     self.caret = f'{b.er}.{b.ec}' if 'Right' in event.keysym else f'{b.br}.{b.bc}'
                     return 'break'
                 return
             
-            #Shift+Alt regardless of keypress order
-            self.__hotbox = (event.keysym in ('Alt_L'  ,'Alt_R'  )) and (event.state & SHIFT) or \
-                            (event.keysym in ('Shift_L','Shift_R')) and (event.state & ALT)
-
-                         
             #BOXSELECT
-            if self.__hotbox:
-                if event.state & BUTTON1 and self.__hotboxfree:
+            if self.__as:   
+                #if this keysym isn't Shift, Alt or an Arrow, ignore and act like it never happened
+                ar, ks = (event.keysym in ARROWS), (event.keysym in ALTSHIFTS)
+                if (ar and not (event.state&ARROWKEY)) or not (ar or ks):
+                    return 'break'
+                
+                #capture selection method
+                self.__as_mouse = (self.__as_mouse or bool(event.state&BUTTON1)) and (not self.__as_arrow)
+                self.__as_arrow = (self.__as_arrow or (event.keysym in ARROWS )) and (not self.__as_mouse)
+                
+                if (self.__as_mouse or self.__as_arrow) and self.__as_free:
                     #box-select mousedown
-                    if not self.__hotboxinit:
-                        self.__boxselect   = True
-                        self.__hotboxinit  = True
+                    if not self.__as_commit:
+                        self.__boxselect = True
+                        self.__as_commit = True
                         #store last known 'insert' index
-                        self.__boxstart    = self.__linsert
-                        return 'break'
+                        self.__boxstart  = self.__linsert
+                        if self.__as_mouse: return 'break'
                     
-                    #box-select mousemove ~ via last keypress (shift or alt) constantly firing
-                    #this index might not exist yet. passing it to `.index()` may destroy it
-                    self.__boxend = self.__vindex(event.x, event.y)
+                    #if we committed to arrow-selecting, and we aren't pressing an arrow, return
+                    if self.__as_arrow and event.keysym in ALTSHIFTS: return 'break'
+                    
+                    #box-select mousemove ~ via last keypress (shift, alt, arrow) constantly firing
+                    #vindex might not exist yet.
+                    self.__boxend = (self.__aindex(event.keysym), self.__vindex(event.x, event.y))[self.__as_mouse]
                     
                     #never use overwrite here, if you do you will lose the proper selection direction
                     if (bnd:=self.__bounds(ow=False)) == self.__lbounds: return
@@ -554,8 +594,8 @@ class BoxSelectText(Textra):
                     return 'break'
                         
                 #box-select mouseup ~ deinit hotbox 
-                if self.__hotboxinit: 
-                    self.__hotbox_release(event.state)
+                if self.__as_commit and self.__as_mouse: 
+                    self.__as_release(event.state)
                     return 'break'
                 
                 #store 'insert' position before BUTTON1 press
@@ -569,11 +609,12 @@ class BoxSelectText(Textra):
                     return 'break'
                             
         elif event.type == tk.EventType.KeyRelease:
-            if self.__hotboxinit: 
-                self.__hotbox_release(event.state)
+            if self.__as_commit and (event.keysym in ALTSHIFTS): 
+                self.__as_release(event.state)
                 return 'break'
+                
             #this catches pressing and releasing hotbox without ever clicking the mouse
-            self.__hotbox = False
+            self.__as = False
             
         elif event.type == tk.EventType.ButtonPress:
             mse  = self.index('current') #get mouse index
@@ -608,54 +649,55 @@ class BoxSelectText(Textra):
                 self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
+            if not self.__selgrab: return
+            
             #GRABBED
-            if self.__selgrab:
-                #turn on all tag add/remove in __proxy
-                self.__selgrab = False
-                self['cursor'] = 'xterm'
+            #turn on all tag add/remove in __proxy
+            self.__selgrab = False
+            self['cursor'] = 'xterm'
+            
+            #nothing to drop ~ abort
+            if not self.__seldrag:
+                self.tag_move('BOXSELECT')
+                self.__boxreset()
+                return
                 
-                #nothing to drop ~ abort
-                if not self.__seldrag:
-                    self.tag_move('BOXSELECT')
-                    self.__boxreset()
-                    return
-                    
-                self.__seldrag = False
-                self.tag_replace('BOXSELECT', tk.SEL)
+            self.__seldrag = False
+            self.tag_replace('BOXSELECT', tk.SEL)
+            
+            #make a "multiline caret" so __boxclean works down every row... 
+            #in what will be the only remaining column, after deletion
+            mc = None
+            if self.__boxselect:
+                mc = self.__bounds(*self.tag_bounds(tk.SEL), ow=False)
+                mc = self.__bounds(f'{mc.br}.{mc.bc}', f'{mc.er}.{mc.bc}', ow=False)
+            
+            #DROP SELECTED                                  
+            if bnd:=self.__boxmove(): # move bounds to current location
+                #COPY
+                self.__copy()
                 
-                #make a "multiline caret" so __boxclean works down every row... 
-                #in what will be the only remaining column, after deletion
-                mc = None
-                if self.__boxselect:
-                    mc = self.__bounds(*self.tag_bounds(tk.SEL), ow=False)
-                    mc = self.__bounds(f'{mc.br}.{mc.bc}', f'{mc.er}.{mc.bc}', ow=False)
+                #CUT
+                #this tracks any effect a deletion has on where we are trying to drop this
+                self.mark_set(INSPNT, (self.caret, f'{bnd.br}.{bnd.bc}')[self.__boxselect])
+                self.__cut(INSPNT)     #delete selection and move caret to insertion point
                 
-                #DROP SELECTED                                  
-                if bnd:=self.__boxmove(): # move bounds to current location
-                    #COPY
-                    self.__copy()
-                    
-                    #CUT
-                    #this tracks any effect a deletion has on where we are trying to drop this
-                    self.mark_set(INSPNT, (self.caret, f'{bnd.br}.{bnd.bc}')[self.__boxselect])
-                    self.__cut(INSPNT)     #delete selection and move caret to insertion point
-                    
-                    #PASTE NORMAL
-                    if not self.__boxselect:
-                        ip = self.caret
-                        self.event_generate('<<Paste>>')
-                        self.__lbounds = self.__bounds(ip, self.caret, ow=True)
-                        self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
-                        return 
-                    
-                    self.__boxclean(mc)
-                    #PASTE COLUMN 
-                    self.__paste()
-                    self.__restore_clipboard()
-                    bnd = self.__boxmove(False) #move bounds to caret
-                    #draw rect
-                    for _,_,_ in self.__bounds_range(tk.SEL, eo=not bnd.rt, ao=True): pass
-                    self.__blink()
+                #PASTE NORMAL
+                if not self.__boxselect:
+                    ip = self.caret
+                    self.event_generate('<<Paste>>')
+                    self.__lbounds = self.__bounds(ip, self.caret, ow=True)
+                    self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
+                    return 
+                
+                self.__boxclean(mc)
+                #PASTE COLUMN 
+                self.__paste()
+                self.__restore_clipboard()
+                bnd = self.__boxmove(False) #move bounds to caret
+                #draw rect
+                for _,_,_ in self.__bounds_range(tk.SEL, eo=not bnd.rt, ao=True): pass
+                self.__blink()
                             
 
 #example 
