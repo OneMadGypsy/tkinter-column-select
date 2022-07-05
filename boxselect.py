@@ -124,8 +124,7 @@ SelectBounds = namedtuple('SelectBounds', 'bc br ec er w h dn rt')
 #BOX-SELECT
 class BoxSelectText(Textra):
     #POSITIONING
-    #absolutely do NOT convert anything within this method to an `.index(...)`
-    #some of the descriptions below may not exist yet
+    #create bounds
     def __bounds(self, b:str=None, e:str=None, dn:bool=None, rt:bool=None, ow:bool=False) -> SelectBounds:
         if (b:=(b or self.__boxstart)) and (e:=(e or self.__boxend)):
             #parse row/col positions
@@ -158,71 +157,65 @@ class BoxSelectText(Textra):
             return SelectBounds(bc, br, ec, er, w, h, dn, rt) 
         return None
     
-    #"DRAW_RECT" (essentially)
-    #tags __lbounds ranges and puts a multiline caret on whichever side makes sense
-    #`ao` determines if (b)egin(o)ffset and (e)nd(o)ffset are applied to everything(True) or just begin/end indexes(False)
+    #selection bounds manager
     def __bounds_range(self, tag, bo:int=0, eo:int=0, ao:bool=False):
-        #hide real caret
         self['insertwidth'] = 0
                     
         if bnd:=self.__lbounds:
-            #precalculate begin/end offsets with (a)ll(o)ffsets 
-            abo, aeo = int(bo*ao)     , int(eo*ao)
-            #add offsets to begin/end indexes
-            abc, aec = f'{bnd.bc+abo}', f'{bnd.ec+aeo}'
-            #prime begin, end ranges
-            b,e = [], []
-            #get last row number
-            r,_ = map(int, self.index(f'{tk.END}-1c').split('.'))
+            bc, ec = bnd.bc+int(bo*ao), bnd.ec+int(eo*ao)            #add offsets to begin/end column indexes if 'ao'
+            lr, _  = map(int, self.index(f'{tk.END}-1c').split('.')) #get last row number
             
-            for n in range(bnd.br, bnd.er+1):
+            b,e = [], []                                            
+            for r in range(bnd.br, bnd.er+1):
                 #if we are not trying to exceed the last usable row
-                if n<=r:
-                    #store beginning and end indexes
-                    b.append(f'{n}.{bnd.bc+bo}')
-                    e.append(f'{n}.{bnd.ec+eo}')
+                if r<=lr:  
+                    b.append(f'{r}.{bnd.bc+bo}') #store begin/end indexes
+                    e.append(f'{r}.{bnd.ec+eo}')
                     
-                    yield n, bnd.bc+abo, bnd.ec+aeo                 #row, begin column, end column
+                    #row, begin column, end column
+                    yield r, bc, ec              
+                        
                     #create caret
-                    i = self.__index(f'{n}.{abc}',f'{n}.{aec}',bnd.dn, bnd.rt)
-                    self.__fauxcaret(i)
+                    self.__fauxcaret(self.__sindex(f'{r}.{bc}',f'{r}.{ec}', bnd.dn, bnd.rt))
                 
-            self.caret = self.__index(f'{bnd.br}.{abc}',f'{bnd.er}.{aec}', bnd.dn, bnd.rt)
-            self.__fauxcaret(self.caret, main=True, cfg=True)       #config main faux-caret
-            
+            self.caret = self.__sindex(f'{bnd.br}.{bc}',f'{bnd.er}.{ec}', bnd.dn, bnd.rt)
+            self.__fauxcaret(self.caret, main=True, cfg=True)
             self.set_activeline()
-            self.tag_move(tag, b, e)                                #clear and draw tag
+            self.tag_move(tag, b, e)
          
-    #this is the "draw a multiline-caret" version of __bounds_range (above)
-    #adv puts the caret adv amount of characters from the current column. this can be negative, and will be for `BackSpace`
+    #multiline-caret bounds manager
     def __typing_range(self, adv:int):
-        self['insertwidth'] = 0                              #hide real caret
-        self.__blinkreset()
+        self['insertwidth'] = 0
         
-        for n in self.image_names(): self.delete(n)          #delete faux-carets
+        #delete faux-carets
+        self.__blinkreset()
+        for n in self.image_names(): self.delete(n)                 
+        
         #if there was something to cut, and adv is negative, stop the caret from retreating
         if self.__cut() and adv<0: adv=0
         
         if bnd:=self.__lbounds:
-            #type at multiline-caret
-            for n in range(bnd.br, bnd.er+1): 
-                yield n, bnd.bc, bnd.ec, adv                 #row, begin, column, adv
-                self.__fauxcaret(f'{n}.{bnd.bc+adv}')        #create caret
-              
-            #begin/end indexes ~ we need this more than once
-            i = (f'{bnd.br}.{bnd.bc+adv}', f'{bnd.er}.{bnd.bc+adv}')
-            self.__lbounds = self.__bounds(*i, ow=True, dn=bnd.dn, rt=bnd.rt)
-            self.caret     = self.__index (*i, bnd.dn, bnd.rt)
-            self.__fauxcaret(self.caret, main=True, cfg=True) #config main faux-caret
+            bc = bnd.bc+adv
             
+            #type at multiline-caret
+            for r in range(bnd.br, bnd.er+1): 
+                #row, begin column, advance
+                yield r, bc, adv                       
+                self.__fauxcaret(f'{r}.{bc}')
+              
+            #begin/end indexes
+            i = (f'{bnd.br}.{bc}', f'{bnd.er}.{bc}')
+            self.__lbounds = self.__bounds(*i, bnd.dn, bnd.rt, ow=True)
+            self.caret     = self.__sindex (*i, bnd.dn, bnd.rt)
+            self.__fauxcaret(self.caret, main=True, cfg=True)
             self.set_activeline()
             self.__blink()
           
     #arrow index
-    def __aindex(self, keysym:str) -> str:
+    def __aindex(self, sym:str) -> str:
         r, c = map(int, self.caret.split('.'))
         for k,(r2,c2) in self.__arrows.items():
-            if k in keysym:
+            if k in sym:
                 r += r2; c += c2
                 self.caret = f'{max(1,r)}.{max(0,c)}'
                 return self.caret
@@ -242,8 +235,8 @@ class BoxSelectText(Textra):
         #where we would be if every possible index was valid
         return f'{max(r,1)}.{max(c,0)}'
     
-    #box-select faux-caret attaches to mouse cursor side of selection, and main faux-caret follows mouse cursor
-    def __index(self, start:str, end:str, dn:bool, rt:bool) -> str:
+    #snap index
+    def __sindex(self, start:str, end:str, dn:bool, rt:bool) -> str:
         r, c = zip(map(int, start.split('.')), map(int, end.split('.')))
         return f'{r[dn]}.{c[rt]}'
        
@@ -362,7 +355,7 @@ class BoxSelectText(Textra):
                 #reconfigure all carets
                 for i in idx: self.__fauxcaret(i, on=on, cfg=True)  
                 #reconfigure "active line" caret, if off it will assign off again
-                i = self.__index(idx[0], idx[-1], bnd.dn, bnd.rt)
+                i = self.__sindex(idx[0], idx[-1], bnd.dn, bnd.rt)
                 self.__fauxcaret(i, on=on, main=True, cfg=True)
                 #schedule next call
                 self.__blinkid = self.after(self.__instime[on], self.__blink, on)
@@ -514,12 +507,14 @@ class BoxSelectText(Textra):
     
     #EVENTS
     def __handler(self, event) -> None:
+        #Shift and Alt facts
+        shift = (event.keysym in SHIFTS) or (event.state & SHIFT)
+        alt   = (event.keysym in ALTS  ) or (event.state & ALT  )
+        shiftonly, altonly = (shift and not alt), (alt and not shift)
+        
+        self.set_activeline()
+        
         if event.type == tk.EventType.KeyPress:
-            #Shift and Alt facts
-            shift     = (event.keysym in SHIFTS) or (event.state & SHIFT)
-            alt       = (event.keysym in ALTS  ) or (event.state & ALT  )
-            shiftonly = shift and not alt
-            altonly   = alt and not shift
             self.__as = alt and shift
                             
             if event.state & CONTROL:
@@ -553,6 +548,22 @@ class BoxSelectText(Textra):
                         self.__boxreset()    
                         return 'break'
             
+            elif event.keysym=='BackSpace':
+                #BOXSELECT BackSpace
+                if self.__boxselect:
+                    for r,c,adv in self.__typing_range(-1):
+                        if adv<0: self.delete(f'{r}.{c}', f'{r}.{c+abs(adv)}')
+                    return 'break'    
+                return
+            elif event.keysym=='Return':
+                #BOXSELECT Return ~ deselects leaving the multiline-caret behind wherever it already was
+                if self.__boxselect:
+                    if bnd:=self.__lbounds:
+                        self.tag_move(tk.SEL)
+                        r,c = map(int, self.caret.split('.'))
+                        self.__lbounds = self.__bounds(f'{bnd.br}.{c}', f'{bnd.er}.{c}', bnd.dn, bnd.rt, ow=True)
+                    return 'break'
+            
             #Shift+Arrow while in box-select mode moves entire selection in Arrow direction
             elif event.keysym in ARROWS and shiftonly and self.__boxselect:
                 if not (bnd:=self.__lbounds): return
@@ -575,14 +586,6 @@ class BoxSelectText(Textra):
                 self.__blink()
                 
                 return 'break'
-            
-            elif event.keysym=='BackSpace':
-                #BOXSELECT BackSpace
-                if self.__boxselect:
-                    for r,bc,ec,adv in self.__typing_range(-1):
-                        if adv<0: self.delete(f'{r}.{bc-1}', f'{r}.{ec}')
-                    return 'break'    
-                return
                     
             #deselects and moves caret to the start(left) or end(right) of the former selection
             #works for any type of selection
@@ -645,13 +648,20 @@ class BoxSelectText(Textra):
             else:
                 #BOX-TYPING
                 if self.__boxselect and len(event.char):
-                    #typing_range handles the faux-caret and bounds, we just need to insert
-                    for r,c,_,_ in self.__typing_range(1): self.insert(f'{r}.{c}', event.char)  
+                    #typing_range handles the faux-caret and bounds management, we just need to insert
+                    for r,c,adv in self.__typing_range(1): self.insert(f'{r}.{c-adv}', event.char)  
                     return 'break'
                             
         elif event.type == tk.EventType.KeyRelease:
             if self.__as_commit and (event.keysym in ALTSHIFTS): 
                 self.__as_release(event.state)
+                #fixes refocus problem when releasing the Alt hotkey
+                self.focus_force()
+                return 'break'
+                
+            if altonly and not self.__as_free:
+                #fixes refocus problem when releasing the Alt hotkey
+                self.focus_force()
                 return 'break'
                 
             #this catches pressing and releasing hotbox without ever clicking the mouse
@@ -659,7 +669,6 @@ class BoxSelectText(Textra):
             
         elif event.type == tk.EventType.ButtonPress:
             mse  = self.index('current') #get mouse index
-            self.set_activeline()
             
             #GRAB SELECTED
             #check if mouse index is within a selection
@@ -682,17 +691,15 @@ class BoxSelectText(Textra):
             elif self.__boxselect: self.__boxreset()
         
         elif event.type == tk.EventType.Motion:
-            if event.state&BUTTON1: self.set_activeline()
             if not self.__selgrab: return
             
             #if you are where you started, then dragging is false
             self.__seldrag = self.caret != self.__linsert
             #cursor indicates state
             self['cursor'] = ('xterm', 'fleur')[self.__seldrag]
-            self['insertwidth'] = INSWIDTH
+            self['insertwidth'] = INSWIDTH #show real caret to help you track your drop
                     
         elif event.type == tk.EventType.ButtonRelease:
-            self.set_activeline()
             if not self.__selgrab: return
             
             #GRABBED
@@ -735,8 +742,8 @@ class BoxSelectText(Textra):
                     self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
                     return 
                 
-                self.__boxclean(mc)
                 #PASTE COLUMN 
+                self.__boxclean(mc)
                 self.__paste()
                 self.__restore_clipboard()
                 bnd = self.__boxmove(False) #move bounds to caret
@@ -747,7 +754,7 @@ class BoxSelectText(Textra):
 
 #example 
 if __name__ == '__main__':
-    ROWS = 20
+    ROWS = 6
     class App(tk.Tk):
         def __init__(self, *args, **kwargs):
             tk.Tk.__init__(self, *args, **kwargs)
@@ -759,7 +766,7 @@ if __name__ == '__main__':
             cols = ''.join(f'| {chr(o)*3} |' for o in range(97,123))
             full = '\n'.join(cols for _ in range(ROWS))
             #create a playground to test column select features
-            bst.text = f'{full}\n\n\n{full}'
+            bst.text = '\n\n\n'.join([full]*ROWS)
     #run        
     App().mainloop()
 
