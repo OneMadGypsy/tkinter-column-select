@@ -7,7 +7,9 @@
     - `LMB` at the point you want the selection to end. If you don't release you can still drag to adjust.
     - press `Arrow` keys in the direction that you want the box to expand/contract. (NumPad Arrows NOT supported)
 
-- Any selection can be drag-dropped. Press and hold `LMB` over a selection to grab, then drag and drop to a new location. In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
+- Any selection can be drag-dropped. 
+    - Press and hold `LMB` over a selection to grab, then drag and drop in a new location. 
+    - In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
 
 - Cut, Copy and Paste work the same as you would expect and the hotkeys are no different. In or from box-select mode these are performed with column behavior.
 
