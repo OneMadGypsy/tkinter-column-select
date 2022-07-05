@@ -1,33 +1,28 @@
-# tkinter-column-select
+# Columnar Behavior and Caret Manipulations for tk.Text
 
-box-(select, cut, copy, paste, type), anysel-(drag, drop), and multiline-caret for tk.Text
+## Controls:
 
-**hotkeys**
+- Box selection begins by putting the caret at the index where you want to start the selection, and pressing `Alt`+`Shift`. <br/><br/>From there you have 3 options:
+    - `LMB`+`DRAG` to drag out a box-selection
+    - `LMB` at the point you want the selection to end. If you don't release you can still drag to adjust.
+    - press `Arrow` keys in the direction that you want the box to expand/contract. (NumPad Arrows NOT supported)
 
-| feature     | hotkeys                                                         |
-|-------------|-----------------------------------------------------------------|
-| box-select  | place caret at desired selection start then Shift+Alt+LMB+drag  |
-| box-cut     | Cntl+x                                                          |
-| box-copy    | Cntl+c                                                          |
-| box-paste   | Cntl+v                                                          |
-| drag-drop   | LMB over (any) selection + drag / release mouse to drop         |
+- Any selection can be drag-dropped. Press and hold `LMB` over a selection to grab, then drag it, and drop it where you want it to go. In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
 
---------------
+- Cut, Copy and Paste work the same as you would expect and the hotkeys are no different. In box-select mode these are performed with column behavior.
 
-**Info**
-- For the typing feature, make a box-selection (with or without width) and start typing. A box selection that has no width will produce a "multiline-caret".
-- Pressing `BackSpace` while in "multiline-caret mode" will perform a `BackSpace` on every active line
-- Pressing any `Left` or `Right` key while in any selection will deselect and set the caret at the beginning(left) or end(right) of the former selection. 
-- You can put the caret where you want the selection to start. Press `Shift`+`Alt`, and mousedown where you want the selection to end. If you don't release you can still drag to adjust the selection
-- You can put the caret where you want the selection to start. Press `Shift`+`Alt`, and use the regular arrow keys to expand the selection. NumPad arrow keys are not supported.
-- In "box-select mode" you can select in any direction with mouse or arrow keys.
-- Box-selecting may create an unlimited amount of whitespace if it needs to highlight columns that don't actually exist on the "current" line. It also cleans up all of the whitespace it generates, every time.
-- There is a vertical grab offset for box-selection. This means, if you grab/drag from the (ex:) second row of the selection, you have to release where you would want the second row to drop.
+- After Making a box-selection and while the selection is still active, if you hold the `Shift` key you can use the `Arrow` keys to move the entire selection.
 
+- Any method of box-selection can be performed in any direction
 
---------------
+- Creating a box-selection of no width will produce a multiline-caret. You can type at the multiline-caret, and whatever you type will appear on every active line. Using `Shift`+`Arrow` you can move the caret around in the direction of the Arrow press. Pressing `BackSpace` will perform a backspace operation on every active line.
 
-**Glitches:**
+- With any selection active, pressing `Left` or `Right` will deselect and move the caret to the beginning (left) or end (right) of the former selection
 
-- Very rarely, releasing `Alt` to come out of the hotkey combo will pause the display. If this happens press `Alt` again. 
+## Features:
 
+- A faint highlight is applied to the background of the line the caret is on
+
+- Whenever there is a multiline-caret, it will have a brighter portion that reflects where the real caret actually is
+
+- While you are in the process of draggin a selection, the real caret is revealed and joins the active line highlight in following your cursor.
