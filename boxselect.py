@@ -14,6 +14,7 @@ ALTSHIFT = ALT|SHIFT
 
 #swatches
 BG       = '#181818' #text background
+ACT_BG   = '#282828' #active line background
 FG       = '#CFCFEF' #all foregrounds and caret color
 SEL_BG   = '#383868' #select background
 SDW_CT   = '#68689F' #shadow caret color
@@ -188,6 +189,8 @@ class BoxSelectText(Textra):
                 
             self.caret = self.__index(f'{bnd.br}.{abc}',f'{bnd.er}.{aec}', bnd.dn, bnd.rt)
             self.__fauxcaret(self.caret, main=True, cfg=True)       #config main faux-caret
+            
+            #self.set_activeline()
             self.tag_move(tag, b, e)                                #clear and draw tag
          
     #this is the "draw a multiline-caret" version of __bounds_range (above)
@@ -209,8 +212,10 @@ class BoxSelectText(Textra):
             #begin/end indexes ~ we need this more than once
             i = (f'{bnd.br}.{bnd.bc+adv}', f'{bnd.er}.{bnd.bc+adv}')
             self.__lbounds = self.__bounds(*i, ow=True, dn=bnd.dn, rt=bnd.rt)
-            self.caret = self.__index(*i, bnd.dn, bnd.rt)
+            self.caret     = self.__index (*i, bnd.dn, bnd.rt)
             self.__fauxcaret(self.caret, main=True, cfg=True) #config main faux-caret
+            
+            #self.set_activeline()
             self.__blink()
           
     #arrow index
@@ -247,7 +252,8 @@ class BoxSelectText(Textra):
         Textra.__init__(self, master, *args, **kwargs)
         
         #box-select tag
-        self.tag_configure('BOXSELECT' , background=self['selectbackground'])
+        self.tag_configure('BOXSELECT'  , background=self['selectbackground'])
+        self.tag_configure('ACTIVELINE' , background=ACT_BG)
         
         #capture character width and height, make faux-carets for this font height
         self.update_font(self['font'])
@@ -287,16 +293,23 @@ class BoxSelectText(Textra):
          
     #PROXY
     def __proxy(self, cmd, *args) -> Any:
-        #boxselect and dragging only allow the BOXSELECT tag from the moment the mouse is pressed
+        #boxselect and dragging only allow the BOXSELECT and ACTIVELINE tags from the moment the mouse is pressed
         if ((self.__as and self.__as_free) or self.__selgrab) and (cmd=='tag') and args:
             if args[0] in ('add', 'remove'):
-                if args[1]!='BOXSELECT': return
+                if not args[1] in ('BOXSELECT','ACTIVELINE'): 
+                    return
         
         #the rest of the time
         try             : target = self.tk.call((self.__p, cmd) + args)#;print(cmd, args)
         except Exception: return
         
         return target   
+        
+    def set_activeline(self):
+        r,_ = map(int, self.caret.split('.'))
+        self.tag_move('ACTIVELINE', f'{r}.0', f'{r+1}.0')
+        self.tag_lower('ACTIVELINE')
+            
     
     #FONT
     def update_font(self, font:Iterable) -> None:
@@ -375,9 +388,9 @@ class BoxSelectText(Textra):
         self.__as_mouse  = False
           
     def __as_release(self, state:int=0) -> None:
-        self.tag_replace('BOXSELECT', tk.SEL)
         self.__as_reset()
         self.__as_free = not self.__boxselect #adjust
+        self.tag_replace('BOXSELECT', tk.SEL)
         self.__blink()
         
     #BOXSELECT
@@ -573,7 +586,7 @@ class BoxSelectText(Textra):
                         if self.__as_mouse: return 'break'
                     
                     #if we committed to arrow-selecting, and we aren't pressing an arrow, return
-                    if self.__as_arrow and event.keysym in ALTSHIFTS: return 'break'
+                    if self.__as_arrow and (event.keysym in ALTSHIFTS): return 'break'
                     
                     #box-select mousemove ~ via last keypress (shift, alt, arrow) constantly firing
                     #vindex might not exist yet.
@@ -618,6 +631,7 @@ class BoxSelectText(Textra):
             
         elif event.type == tk.EventType.ButtonPress:
             mse  = self.index('current') #get mouse index
+            #self.set_activeline()
             
             #GRAB SELECTED
             #check if mouse index is within a selection
@@ -640,15 +654,17 @@ class BoxSelectText(Textra):
             elif self.__boxselect: self.__boxreset()
         
         elif event.type == tk.EventType.Motion:
-            #if a selection has been grabbed
-            if self.__selgrab:
-                #if you are where you started, then dragging is false
-                self.__seldrag = self.caret != self.__linsert
-                #cursor indicates state
-                self['cursor'] = ('xterm', 'fleur')[self.__seldrag]
-                self['insertwidth'] = INSWIDTH
+            #if event.state&BUTTON1: #self.set_activeline()
+            if not self.__selgrab: return
+            
+            #if you are where you started, then dragging is false
+            self.__seldrag = self.caret != self.__linsert
+            #cursor indicates state
+            self['cursor'] = ('xterm', 'fleur')[self.__seldrag]
+            self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
+            #self.set_activeline()
             if not self.__selgrab: return
             
             #GRABBED
@@ -687,6 +703,7 @@ class BoxSelectText(Textra):
                     ip = self.caret
                     self.event_generate('<<Paste>>')
                     self.__lbounds = self.__bounds(ip, self.caret, ow=True)
+                    #self.set_activeline()
                     self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
                     return 
                 
