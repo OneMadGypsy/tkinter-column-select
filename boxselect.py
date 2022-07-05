@@ -14,9 +14,9 @@ ALTSHIFT = ALT|SHIFT
 
 #swatches
 BG       = '#181818' #text background
-ACT_BG   = '#282828' #active line background
+ACT_BG   = '#1f1f28' #active line background
 FG       = '#CFCFEF' #all foregrounds and caret color
-SEL_BG   = '#383868' #select background
+SEL_BG   = '#383848' #select background
 SDW_CT   = '#68689F' #shadow caret color
 
 #vars
@@ -190,7 +190,7 @@ class BoxSelectText(Textra):
             self.caret = self.__index(f'{bnd.br}.{abc}',f'{bnd.er}.{aec}', bnd.dn, bnd.rt)
             self.__fauxcaret(self.caret, main=True, cfg=True)       #config main faux-caret
             
-            #self.set_activeline()
+            self.set_activeline()
             self.tag_move(tag, b, e)                                #clear and draw tag
          
     #this is the "draw a multiline-caret" version of __bounds_range (above)
@@ -215,7 +215,7 @@ class BoxSelectText(Textra):
             self.caret     = self.__index (*i, bnd.dn, bnd.rt)
             self.__fauxcaret(self.caret, main=True, cfg=True) #config main faux-caret
             
-            #self.set_activeline()
+            self.set_activeline()
             self.__blink()
           
     #arrow index
@@ -454,18 +454,18 @@ class BoxSelectText(Textra):
             self.clipboard_append(self.__lclipbd)
 
     #remove every selection-related thing 
-    def __cut(self, p:str=None):
+    def __cut(self, p:str=None) -> bool:
         #get selection ranges
         r = self.tag_ranges(tk.SEL)
         for i in range(0, len(r), 2):
             self.tag_remove(tk.SEL, *r[i:i+2])  #remove tk.SEL tag
             self.replace_text(*r[i:i+2], '')    #delete selected text
         self.caret = p or self.caret            #put the caret somewhere
-        return len(r)
+        return bool(r)
         
     #move all selected text to clipboard
     #this is safe for regular selected text but designed for box-selected text
-    def __copy(self) -> None:
+    def __copy(self) -> bool:
         r = self.tag_ranges(tk.SEL)
         #compile clipboard data from ranges
         t = '\n'.join(self.get(*r[i:i+2]) for i in range(0,len(r),2))
@@ -476,10 +476,14 @@ class BoxSelectText(Textra):
             except tk.TclError: self.__lclipbd = ''
             self.clipboard_clear()
             self.clipboard_append(t)
+        return bool(r)
 
     #insert clipboard text
-    def __paste(self) -> None:
-        l = self.clipboard_get().split('\n')    #get lines
+    def __paste(self) -> bool:
+        try:
+            l = self.clipboard_get().split('\n')    #get lines
+        except tk.TclError: return False
+        
         r,c = map(int, self.caret.split('.'))   #get caret row, col
         #we can't go by columns due to tabs being possibly included
         x,_,_,_ = self.bbox(self.caret)
@@ -506,14 +510,17 @@ class BoxSelectText(Textra):
             self.insert(p, t)
         
         self.caret = f'{r}.{c}' #put the caret at the top-left of the paste
+        return True
     
     #EVENTS
     def __handler(self, event) -> None:
         if event.type == tk.EventType.KeyPress:
-            #Shift+Alt one way or another
-            self.__as = (event.keysym in ALTS  ) and (event.state & SHIFT) or \
-                        (event.keysym in SHIFTS) and (event.state & ALT  ) or \
-                        (event.state & ALTSHIFT) == ALTSHIFT
+            #Shift and Alt facts
+            shift     = (event.keysym in SHIFTS) or (event.state & SHIFT)
+            alt       = (event.keysym in ALTS  ) or (event.state & ALT  )
+            shiftonly = shift and not alt
+            altonly   = alt and not shift
+            self.__as = alt and shift
                             
             if event.state & CONTROL:
                 if   event.keysym=='c':
@@ -545,8 +552,29 @@ class BoxSelectText(Textra):
                         self.__paste()
                         self.__boxreset()    
                         return 'break'
+            
+            #Shift+Arrow while in box-select mode moves entire selection in Arrow direction
+            elif event.keysym in ARROWS and shiftonly and self.__boxselect:
+                if not (bnd:=self.__lbounds): return
                 
-                return
+                self.__blinkreset()
+                #multiline-caret
+                mc = self.__bounds(f'{bnd.br}.{bnd.bc}', f'{bnd.er}.{bnd.bc}', ow=False)
+                #track any effect a deletion has on our drop index
+                self.mark_set(INSPNT, f'{bnd.br}.{bnd.bc}')
+                
+                self.__copy()
+                self.__cut(INSPNT)     
+                self.__boxclean(mc)
+                
+                self.__aindex(event.keysym) #move caret according to keysym
+                self.__paste()
+                self.__restore_clipboard()
+                bnd = self.__boxmove(False)
+                for _,_,_ in self.__bounds_range(tk.SEL, eo=not bnd.rt, ao=True): pass
+                self.__blink()
+                
+                return 'break'
             
             elif event.keysym=='BackSpace':
                 #BOXSELECT BackSpace
@@ -631,7 +659,7 @@ class BoxSelectText(Textra):
             
         elif event.type == tk.EventType.ButtonPress:
             mse  = self.index('current') #get mouse index
-            #self.set_activeline()
+            self.set_activeline()
             
             #GRAB SELECTED
             #check if mouse index is within a selection
@@ -654,7 +682,7 @@ class BoxSelectText(Textra):
             elif self.__boxselect: self.__boxreset()
         
         elif event.type == tk.EventType.Motion:
-            #if event.state&BUTTON1: #self.set_activeline()
+            if event.state&BUTTON1: self.set_activeline()
             if not self.__selgrab: return
             
             #if you are where you started, then dragging is false
@@ -664,7 +692,7 @@ class BoxSelectText(Textra):
             self['insertwidth'] = INSWIDTH
                     
         elif event.type == tk.EventType.ButtonRelease:
-            #self.set_activeline()
+            self.set_activeline()
             if not self.__selgrab: return
             
             #GRABBED
@@ -703,7 +731,7 @@ class BoxSelectText(Textra):
                     ip = self.caret
                     self.event_generate('<<Paste>>')
                     self.__lbounds = self.__bounds(ip, self.caret, ow=True)
-                    #self.set_activeline()
+                    self.set_activeline()
                     self.tag_move(tk.SEL, ip, self.caret) #clear and draw tk.SEL
                     return 
                 
