@@ -9,7 +9,7 @@
 
 - Any selection can be drag-dropped. Press and hold `LMB` over a selection to grab, then drag and drop to a new location. In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
 
-- Cut, Copy and Paste work the same as you would expect and the hotkeys are no different. In box-select mode these are performed with column behavior.
+- Cut, Copy and Paste work the same as you would expect and the hotkeys are no different. In or from box-select mode these are performed with column behavior.
 
 - After Making a box-selection and while the selection is still active, if you hold the `Shift` key you can use the `Arrow` keys to move the entire selection.
 
