@@ -31,3 +31,7 @@
 - Whenever there is a multiline-caret, it will have a brighter portion that reflects where the real caret actually is
 
 - While you are in the process of draggin a selection, the real caret is revealed and joins the active line highlight in following your cursor.
+
+## Glitches:
+
+- On very rare occassions, releasing `Alt` to come out of the hotkey combo, will result in the window gaining focus. If this happens just press `Alt` again.
