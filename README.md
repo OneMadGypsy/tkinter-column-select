@@ -16,6 +16,8 @@
 - Any selection can be drag-dropped. 
     - Press and hold `LMB` over a selection to grab, then drag and drop in a new location. 
     - In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
+    
+- With a box-selection active, pressing `Return` will deselect and leave the multiline-caret behind, wherever it was. Pressing `Return` while in multiline-caret mode will do nothing.
 
 - With any selection active, pressing `Left` or `Right` will deselect and move the caret to the beginning (left) or end (right) of the former selection
 
