@@ -7,7 +7,7 @@
     - `LMB` at the point you want the selection to end. If you don't release you can still drag to adjust.
     - press `Arrow` keys in the direction that you want the box to expand/contract. (NumPad Arrows NOT supported)
 
-- Any selection can be drag-dropped. Press and hold `LMB` over a selection to grab, then drag it, and drop it where you want it to go. In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
+- Any selection can be drag-dropped. Press and hold `LMB` over a selection to grab, then drag and drop to a new location. In the case of box-selections there is a vertical offset applied to grab and drop. If you grabbed at (ex) the third row of a column, you would have to drop where you want the third row to be.
 
 - Cut, Copy and Paste work the same as you would expect and the hotkeys are no different. In box-select mode these are performed with column behavior.
 
@@ -15,7 +15,10 @@
 
 - Any method of box-selection can be performed in any direction
 
-- Creating a box-selection of no width will produce a multiline-caret. You can type at the multiline-caret, and whatever you type will appear on every active line. Using `Shift`+`Arrow` you can move the caret around in the direction of the Arrow press. Pressing `BackSpace` will perform a backspace operation on every active line.
+- Creating a box-selection of no width will produce a multiline-caret. 
+    - You can type at the multiline-caret, and whatever you type will appear on every active line. 
+    - Using `Shift`+`Arrow` you can move the caret around in the direction of the arrow press. 
+    - Pressing `BackSpace` will perform a backspace operation on every active line.
 
 - With any selection active, pressing `Left` or `Right` will deselect and move the caret to the beginning (left) or end (right) of the former selection
 
