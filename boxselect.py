@@ -16,19 +16,22 @@ ALTSHIFT = ALT|SHIFT
 BG       = '#181818' #text background
 ACT_BG   = '#1f1f28' #active line background
 FG       = '#CFCFEF' #all foregrounds and caret color
-SEL_BG   = '#383848' #select background
-SDW_CT   = '#68689F' #shadow caret color
+SEL_BG   = '#2f2f3f' #select background
+SDW_CT   = '#686898' #shadow caret color
 
 #vars
 INSWIDTH = 1                      #caret width
 INSPNT   = 'insertpoint'          #drop insertion point
 ILWHITE  = re.compile(r'[ \t]+')  #inline whitespace regex
+WHITE    = re.compile(r'\s+')     #all whitespace regex
 
 #arrows ~ for various key conditions
-HARROWS  = ('Left','KP_Left','Right','KP_Right')
-VARROWS  = ('Up','KP_Up','Down','KP_Down')
+HARROWS  = ('Left','Right','KP_Left','KP_Right')
+VARROWS  = ('Up'  ,'Down' ,'KP_Up'  ,'KP_Down' )
 ARROWS   = HARROWS+VARROWS
-ALTS     = ('Alt_L', 'Alt_R')
+
+#alts and shifts vor various key conditions
+ALTS     = ('Alt_L'  , 'Alt_R'  )
 SHIFTS   = ('Shift_L', 'Shift_R')
 ALTSHIFTS= ALTS+SHIFTS
 
@@ -49,7 +52,7 @@ class Text_t:
     takefocus       :int  = 1
     undo            :bool = True
     autoseparators  :bool = True
-    maxundo         :int  = 32 #-1 for infinite
+    maxundo         :int  = 1000 #-1 for infinite
 
 
 #this adds some extra generic behavior to tk.Text, and automates it's config to our purposes
@@ -283,6 +286,7 @@ class BoxSelectText(Textra):
         self.__p = self._w + "_orig"
         self.tk.call("rename", self._w, self.__p)
         self.tk.createcommand(self._w, self.__proxy)
+        
          
     #PROXY
     def __proxy(self, cmd, *args) -> Any:
@@ -303,7 +307,6 @@ class BoxSelectText(Textra):
         self.tag_move('ACTIVELINE', f'{r}.0', f'{r+1}.0')
         self.tag_lower('ACTIVELINE')
             
-    
     #FONT
     def update_font(self, font:Iterable) -> None:
         self.__font = tkf.Font(font=font)
@@ -329,10 +332,10 @@ class BoxSelectText(Textra):
                      f'{xbmdata}}};').encode())
                      
         #load xbm files for faux-caret ~ they have to be in this order
-        #this doesn't have a proper name because __fauxcaret manages this entirely, and it's existance should otherwise be ignored
-        self.__  = (tk.BitmapImage(file=f.name, foreground=SDW_CT),                      #shadow caret 
-                    tk.BitmapImage(file=f.name, foreground=self['background']),          #off caret
-                    tk.BitmapImage(file=f.name, foreground=self['insertbackground']))    #main caret  
+        #never touch this directly. use __fauxcaret.
+        self.__  = (tk.BitmapImage(file=f.name, foreground=SDW_CT,background=self['background']),       #shadow caret 
+                    tk.BitmapImage(file=f.name, foreground=ACT_BG),#self['background']),                         #off caret
+                    tk.BitmapImage(file=f.name, foreground=self['insertbackground'],background=ACT_BG)) #main caret  
         
         #delete file
         os.unlink(f.name)
@@ -360,8 +363,6 @@ class BoxSelectText(Textra):
                 #schedule next call
                 self.__blinkid = self.after(self.__instime[on], self.__blink, on)
                 return
-            
-        #raise ValueError('__blink: Nothing to sort!')
     
     #reset blink data
     def __blinkreset(self) -> None:
@@ -457,19 +458,17 @@ class BoxSelectText(Textra):
         return bool(r)
         
     #move all selected text to clipboard
-    #this is safe for regular selected text but designed for box-selected text
     def __copy(self) -> bool:
         r = self.tag_ranges(tk.SEL)
-        #compile clipboard data from ranges
         t = '\n'.join(self.get(*r[i:i+2]) for i in range(0,len(r),2))
-        if t:
-            #bkup, clear and populate clipboard
+        
+        if n:=len(WHITE.sub('', t)):
             #bkup used with drag to restore the clipboard after drop
             try               : self.__lclipbd = self.clipboard_get()
             except tk.TclError: self.__lclipbd = ''
             self.clipboard_clear()
             self.clipboard_append(t)
-        return bool(r)
+        return bool(n)
 
     #insert clipboard text
     def __paste(self) -> bool:
@@ -488,11 +487,11 @@ class BoxSelectText(Textra):
             p = f'{r+i}.{c}'
             
             #if the row doesn't exist, create it
-            if self.compare(p, '>=', 'end'): self.insert(tk.END, f'\n')
+            if self.compare(p, '>=', 'end'): self.insert(tk.END, '\n')
                 
             #if the column doesn't exist, create it
             q = f'{r+i}.end'
-            if self.compare(p, '>=', q) and i:
+            if self.compare(p, '>=', q):# and i:
                 #what's the difference in available and desired columns
                 n = pc-int(self.index(q).split('.')[-1])
                 #add enough space to keep us in line, and add the text while we are at it
@@ -547,7 +546,8 @@ class BoxSelectText(Textra):
                         self.__paste()
                         self.__boxreset()    
                         return 'break'
-            
+                return
+
             elif event.keysym=='BackSpace':
                 #BOXSELECT BackSpace
                 if self.__boxselect:
@@ -555,13 +555,13 @@ class BoxSelectText(Textra):
                         if adv<0: self.delete(f'{r}.{c}', f'{r}.{c+abs(adv)}')
                     return 'break'    
                 return
-            
+                
             elif event.keysym=='Return':
                 #BOXSELECT Return ~ deselects leaving the multiline-caret behind wherever it already was
                 if self.__boxselect:
                     if bnd:=self.__lbounds:
                         self.tag_move(tk.SEL)
-                        r,c = map(int, self.caret.split('.'))
+                        _,c = map(int, self.caret.split('.'))
                         self.__lbounds = self.__bounds(f'{bnd.br}.{c}', f'{bnd.er}.{c}', bnd.dn, bnd.rt, ow=True)
                     return 'break'
             
@@ -575,16 +575,19 @@ class BoxSelectText(Textra):
                 #track any effect a deletion has on our drop index
                 self.mark_set(INSPNT, f'{bnd.br}.{bnd.bc}')
                 
-                self.__copy()
+                cpy = self.__copy()
+                    
                 self.__cut(INSPNT)     
                 self.__boxclean(mc)
+                self.__aindex(event.keysym) #move caret in arrow direction
                 
-                self.__aindex(event.keysym) #move caret according to keysym
-                self.__paste()
-                self.__restore_clipboard()
+                if cpy:
+                    self.__paste()
+                    self.__restore_clipboard()
+                    
                 bnd = self.__boxmove(False)
                 for _,_,_ in self.__bounds_range(tk.SEL, eo=not bnd.rt, ao=True): pass
-                self.__blink()
+                self.__blink(False)
                 
                 return 'break'
                     
@@ -763,10 +766,9 @@ if __name__ == '__main__':
             self.rowconfigure   (0, weight=1)
             #instantiate editor
             (bst := BoxSelectText(self)).grid(sticky='nswe')
-            #columnar text
+            #create a playground to test column select features
             cols = ''.join(f'| {chr(o)*3} |' for o in range(97,123))
             full = '\n'.join(cols for _ in range(ROWS))
-            #create a playground to test column select features
             bst.text = '\n\n\n'.join([full]*ROWS)
     #run        
     App().mainloop()
