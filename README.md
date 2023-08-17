@@ -31,7 +31,7 @@
 
 - Multiline-carets always have a brighter portion that reflects where the real caret is
 
-- While you are in the process of draggin a selection the real caret is revealed and joins the active line highlight in following your cursor.
+- While you are in the process of dragging a selection the real caret is revealed and joins the active line highlight in following your cursor.
 
 ## Glitches:
 
